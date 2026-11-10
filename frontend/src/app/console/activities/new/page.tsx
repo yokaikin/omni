@@ -53,6 +53,9 @@ function NewActivityPageContent() {
   const [perUserLimit, setPerUserLimit] = useState('')
   const [realNameRequired, setRealNameRequired] = useState(false)
   const [ticketTransferAllowed, setTicketTransferAllowed] = useState(true)
+  const [refundFullDaysBefore, setRefundFullDaysBefore] = useState('30')
+  const [refundPartialDaysBefore, setRefundPartialDaysBefore] = useState('7')
+  const [refundPartialRate, setRefundPartialRate] = useState('80')
 
   // 步骤2：站点配置。普通活动一个站点，巡演多个站点。
   const [stationConfig, setStationConfig] = useState(() => createEmptyStationVenueApprovalValue())
@@ -173,6 +176,14 @@ function NewActivityPageContent() {
       await globalAlert('个人限购张数必须为正整数')
       return
     }
+    const refundFullDays = Number(refundFullDaysBefore)
+    const refundPartialDays = Number(refundPartialDaysBefore)
+    const refundRate = Number(refundPartialRate)
+    if (![refundFullDays, refundPartialDays, refundRate].every(Number.isInteger)
+      || refundFullDays <= refundPartialDays || refundPartialDays <= 0 || refundRate <= 0 || refundRate > 100) {
+      await globalAlert('请检查退票规则：天数必须为正整数，全额退款天数须大于折扣退款天数，折扣比例为1至100%')
+      return
+    }
     if (activityMode === 'tour') {
       for (const item of tourStations) {
         const error = validateStationVenueApproval(item.value)
@@ -259,6 +270,9 @@ function NewActivityPageContent() {
         perUserLimit: limitText ? Number(limitText) : null,
         realNameRequired,
         ticketTransferAllowed,
+        refundFullDaysBefore: Number(refundFullDaysBefore),
+        refundPartialDaysBefore: Number(refundPartialDaysBefore),
+        refundPartialRate: Number(refundPartialRate),
       })
 
       let version
@@ -420,6 +434,15 @@ function NewActivityPageContent() {
                     <span className="mt-1 block text-[#999]">开启后，用户下单和候补时需要选择对应数量的实名观演人。</span>
                   </span>
                 </label>
+                <div className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
+                  <div className="font-medium">退票规则</div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                    <label>全额退款提前天数<input type="number" min={1} value={refundFullDaysBefore} onChange={e => setRefundFullDaysBefore(e.target.value)} className="mt-1 w-full rounded border border-[#ddd] px-2 py-1.5" /></label>
+                    <label>折扣退款提前天数<input type="number" min={1} value={refundPartialDaysBefore} onChange={e => setRefundPartialDaysBefore(e.target.value)} className="mt-1 w-full rounded border border-[#ddd] px-2 py-1.5" /></label>
+                    <label>折扣退款比例（%）<input type="number" min={1} max={100} value={refundPartialRate} onChange={e => setRefundPartialRate(e.target.value)} className="mt-1 w-full rounded border border-[#ddd] px-2 py-1.5" /></label>
+                  </div>
+                  <p className="mt-2 text-[12px] text-[#999]">全额退款提前天数必须大于折扣退款提前天数。</p>
+                </div>
                 <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
                   <input type="checkbox" checked={ticketTransferAllowed} onChange={e => setTicketTransferAllowed(e.target.checked)} className="mt-0.5 accent-[#ff1268]" />
                   <span>

@@ -1,6 +1,6 @@
 ﻿param(
     [int]$AdvertisePort = $(if ($env:SEATA_ADVERTISE_PORT) { [int]$env:SEATA_ADVERTISE_PORT } else { 8091 }),
-    [string]$NacosAddr = $(if ($env:SEATA_NACOS_ADDR) { $env:SEATA_NACOS_ADDR } else { "localhost:8848" })
+    [string]$NacosAddr = $(if ($env:SEATA_NACOS_ADDR) { $env:SEATA_NACOS_ADDR } else { "127.0.0.1:8848" })
 )
 
 $ErrorActionPreference = "Stop"
@@ -60,6 +60,9 @@ function Wait-TcpPort {
             return
         }
         Start-Sleep -Seconds 2
+    }
+    if ($HostValue -notlike "127.*" -and (Test-TcpPort -HostValue "127.0.0.1" -PortValue $PortValue)) {
+        throw "Docker Desktop 当前只接受 127.0.0.1:$PortValue。请以管理员身份执行：netsh interface portproxy add v4tov4 listenaddress=$HostValue listenport=$PortValue connectaddress=127.0.0.1 connectport=$PortValue；然后重试本脚本。"
     }
     throw "Seata Server 在 ${HostValue}:$PortValue 未就绪。"
 }

@@ -5,7 +5,6 @@ import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.omni.common.result.Result;
 import com.omni.order.config.OrderSentinelConfig;
 import com.omni.order.dto.CreateOrderRequest;
-import com.omni.order.dto.CreateTeamOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.MarkPartialRefundedRequest;
 import com.omni.order.dto.OrderListItemResponse;
@@ -85,32 +84,6 @@ public class OrderController {
         this.jwtSecret = jwtSecret;
     }
 
-    /**
-     * 创建订单
-     */
-    @PostMapping("/create")
-    public Result<Order> createOrder(@RequestBody CreateOrderRequest request,
-                                     @RequestHeader(value = "Authorization", required = false) String authorization) {
-        Long userId = requireAuthenticatedUserId(authorization);
-        if (userId == null) {
-            return Result.fail(401, "未登录");
-        }
-        request.setUserId(userId);
-        Order order = orderService.createOrder(request);
-        return Result.success(order);
-    }
-
-    @PostMapping("/create-with-seats")
-    public Result<Order> createOrderWithSeats(@RequestBody LockSeatsRequest request,
-                                              @RequestHeader(value = "Authorization", required = false) String authorization) {
-        Long userId = requireAuthenticatedUserId(authorization);
-        if (userId == null) {
-            return Result.fail(401, "未登录");
-        }
-        request.setUserId(userId);
-        return Result.success(orderService.createOrderWithSeats(request));
-    }
-
     @PostMapping("/internal/create")
     @SentinelResource(value = OrderSentinelConfig.INTERNAL_CREATE_ORDER_RESOURCE, blockHandler = "createInternalOrderBlocked")
     public Result<Order> createInternalOrder(@RequestBody CreateOrderRequest request,
@@ -142,20 +115,6 @@ public class OrderController {
     /**
      * 用户订单列表
      */
-    @PostMapping("/internal/team/create-with-locked-seats")
-    @SentinelResource(value = OrderSentinelConfig.INTERNAL_CREATE_TEAM_ORDER_WITH_LOCKED_SEATS_RESOURCE, blockHandler = "createInternalTeamOrderBlocked")
-    public Result<Order> createInternalTeamOrder(@RequestBody CreateTeamOrderRequest request,
-                                                 @RequestHeader(value = "X-Internal-Token", required = false) String token) {
-        if (!isValidInternalToken(token)) {
-            return Result.fail(403, "forbidden");
-        }
-        return Result.success(orderService.createTeamOrderWithLockedSeats(request));
-    }
-
-    public Result<Order> createInternalTeamOrderBlocked(CreateTeamOrderRequest request, String token, BlockException exception) {
-        return Result.fail(429, "系统繁忙，请稍后重试");
-    }
-
     @GetMapping("/my")
     public Result<List<OrderListItemResponse>> listOrders(
             @RequestHeader(value = "Authorization", required = false) String authorization) {

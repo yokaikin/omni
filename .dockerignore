@@ -1,0 +1,15 @@
+.git
+.gitignore
+.codex-doc-work
+.playwright-cli
+.playwright-mcp
+backups
+docs
+frontend
+nestjs
+runtime
+outputs
+unit-test
+java/**/target
+**/node_modules
+**/.next

@@ -5,12 +5,25 @@ param(
     [switch]$SkipFrontend,
     [switch]$SkipInstall,
     [switch]$UseSharedDatabase,
-    [switch]$UseDockerInfra
+    [switch]$UseDockerInfra,
+    [switch]$UseDockerStack
 )
 
 $ErrorActionPreference = "Continue"
 $projectRoot = $PSScriptRoot
 if (-not $projectRoot) { $projectRoot = Get-Location }
+
+if ($UseDockerStack) {
+    try {
+        & (Join-Path $projectRoot "scripts\start-docker-stack.ps1")
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        exit 0
+    } catch {
+        Write-Error $_
+        exit 1
+    }
+}
+
 $runtimeTemp = Join-Path $projectRoot "runtime\tmp"
 New-Item -ItemType Directory -Force -Path $runtimeTemp | Out-Null
 $env:TEMP = $runtimeTemp
@@ -368,7 +381,7 @@ if (-not $SkipJava) {
 
     if (-not $UseSharedDatabase) {
         Write-Step "发布 Seata 配置..."
-        & (Join-Path $projectRoot "scripts\update-seata-nacos-config.ps1") -NacosAddr "localhost:$nacosPort"
+        & (Join-Path $projectRoot "scripts\update-seata-nacos-config.ps1") -NacosAddr "127.0.0.1:$nacosPort"
     }
 
     foreach ($svc in $javaServices) {

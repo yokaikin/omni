@@ -20,22 +20,6 @@ export interface PurchaseContextInfo {
   sessionTime?: string | null;
 }
 
-export interface LockTeamSeatsInput {
-  sessionId: number;
-  ticketTypeId: number;
-  quantity: number;
-  strategy: string;
-  fallbacks: string[];
-  lockRequestId: string;
-  lockExpireTime: string;
-}
-
-export interface TeamSeatLockResponse {
-  lockedSeatIds: number[];
-  seatLabels: string[];
-  matchedStrategy: string;
-}
-
 @Injectable()
 export class TicketClientService {
   private readonly baseUrl = requireEnv('TICKET_SERVICE_URL', '票务服务地址未配置');
@@ -69,31 +53,4 @@ export class TicketClientService {
     return result.data;
   }
 
-  async lockTeamSeats(input: LockTeamSeatsInput): Promise<TeamSeatLockResponse> {
-    if (!this.internalToken) throw new Error('票务内部接口令牌未配置');
-    const response = await fetch(`${this.baseUrl}/api/ticket/internal/sales/lock-team-seats`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': this.internalToken },
-      body: JSON.stringify(input),
-    });
-    const result = await response.json();
-    if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || '组队座位锁定失败');
-    }
-    return result.data;
-  }
-
-  async releaseTeamSeatLock(lockRequestId: string, seatIds: number[]): Promise<boolean> {
-    if (!this.internalToken) throw new Error('票务内部接口令牌未配置');
-    const response = await fetch(`${this.baseUrl}/api/ticket/internal/sales/release-team-seat-lock`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': this.internalToken },
-      body: JSON.stringify({ lockRequestId, seatIds }),
-    });
-    const result = await response.json();
-    if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || '组队座位锁释放失败');
-    }
-    return Boolean(result.data);
-  }
 }

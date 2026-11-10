@@ -3,9 +3,11 @@
 import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { register } from '@/lib/api'
-import { Phone, Lock, ShieldCheck } from 'lucide-react'
+import { Phone } from 'lucide-react'
 import { GraphicCaptcha } from '@/components/GraphicCaptcha'
 import { globalAlert } from '@/components/GlobalDialog'
+import { PasswordMatchInput } from '@/components/PasswordMatchInput'
+import { validatePasswordPair } from '@/lib/password-validation'
 
 export function RegisterForm() {
   const router = useRouter()
@@ -16,14 +18,20 @@ export function RegisterForm() {
   const [verified, setVerified] = useState(false)
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const [shakePassword, setShakePassword] = useState(false)
 
   const clearError = () => { if (errorMsg) setErrorMsg('') }
 
   const handleRegister = async (e: FormEvent) => {
     e.preventDefault()
     if (!phone.trim()) { setErrorMsg('请输入手机号'); return }
-    if (!password) { setErrorMsg('请输入密码'); return }
-    if (password !== confirmPassword) { setErrorMsg('两次输入的密码不一致'); return }
+    const passwordError = validatePasswordPair({ password, confirmPassword, required: true })
+    if (passwordError) {
+      setErrorMsg(passwordError)
+      setShakePassword(true)
+      window.setTimeout(() => setShakePassword(false), 240)
+      return
+    }
     if (!verified) { setErrorMsg('请先完成图形验证码校验'); return }
     if (!agreed) { setErrorMsg('请先阅读并同意相关协议'); return }
 
@@ -44,7 +52,10 @@ export function RegisterForm() {
     <div className="w-full max-w-[500px] mx-auto bg-white/95 backdrop-blur-2xl rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-10 border border-white/20">
       <h2 className="text-2xl font-bold text-gray-800 mb-8 text-center">注册万象账号</h2>
       
-      <form onSubmit={handleRegister} className="space-y-5">
+      <form onSubmit={handleRegister} autoComplete="off" className="space-y-5">
+        <input type="text" name="prevent_autofill_user" className="hidden" aria-hidden="true" />
+        <input type="password" name="prevent_autofill_pass" className="hidden" aria-hidden="true" />
+
         {/* Phone */}
         <div className="relative group flex">
           <div className="flex items-center justify-center bg-gray-100 border border-r-0 border-gray-200 rounded-l-xl px-4 text-gray-600 text-sm font-medium">
@@ -65,30 +76,27 @@ export function RegisterForm() {
         </div>
 
         {/* Password */}
-        <div className="relative group">
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-            <Lock className="h-5 w-5 text-gray-400 group-focus-within:text-[#ff1268] transition-colors" />
-          </div>
-          <input
-            type="password"
+        <div className={shakePassword ? 'credential-shake' : ''}>
+          <PasswordMatchInput
             value={password}
-            onChange={(e) => { setPassword(e.target.value); clearError() }}
+            onChange={(value) => { setPassword(value); clearError() }}
             placeholder="请输入密码"
-            className="w-full bg-gray-50/50 border border-gray-200 text-gray-900 rounded-xl block pl-11 p-3.5 focus:ring-2 focus:ring-[#ff1268]/20 focus:border-[#ff1268] focus:bg-white outline-none transition-all placeholder:text-gray-400 font-medium"
+            name="password"
+            ariaLabel="设置密码"
+            caretClassName="caret-[#ff1268]"
           />
         </div>
 
         {/* Confirm Password */}
-        <div className="relative group">
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-            <ShieldCheck className="h-5 w-5 text-gray-400 group-focus-within:text-[#ff1268] transition-colors" />
-          </div>
-          <input
-            type="password"
+        <div className={shakePassword ? 'credential-shake' : ''}>
+          <PasswordMatchInput
             value={confirmPassword}
-            onChange={(e) => { setConfirmPassword(e.target.value); clearError() }}
+            onChange={(value) => { setConfirmPassword(value); clearError() }}
+            compareValue={password}
             placeholder="请再次输入密码"
-            className="w-full bg-gray-50/50 border border-gray-200 text-gray-900 rounded-xl block pl-11 p-3.5 focus:ring-2 focus:ring-[#ff1268]/20 focus:border-[#ff1268] focus:bg-white outline-none transition-all placeholder:text-gray-400 font-medium"
+            name="confirmPassword"
+            ariaLabel="确认密码"
+            caretClassName="caret-[#ff1268]"
           />
         </div>
 

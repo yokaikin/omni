@@ -238,7 +238,7 @@ class TicketAvailabilityQueryServiceTest {
         session.setId(id);
         session.setActivityId(activityId);
         session.setVenueId(venueId);
-        session.setStartTime(LocalDateTime.of(2026, 9, 20, 19, 30));
+        session.setStartTime(LocalDateTime.now().plusDays(30));
         session.setStatus(1);
         return session;
     }

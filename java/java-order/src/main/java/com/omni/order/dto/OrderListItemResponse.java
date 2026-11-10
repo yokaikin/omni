@@ -35,6 +35,9 @@ public class OrderListItemResponse {
     private Boolean teamOrder;
     private String seatSelectionMode;
     private List<OrderAttendeeResponse> attendees;
+    private Integer refundFullDaysBefore;
+    private Integer refundPartialDaysBefore;
+    private Integer refundPartialRate;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -96,4 +99,10 @@ public class OrderListItemResponse {
     public void setSeatSelectionMode(String seatSelectionMode) { this.seatSelectionMode = seatSelectionMode; }
     public List<OrderAttendeeResponse> getAttendees() { return attendees; }
     public void setAttendees(List<OrderAttendeeResponse> attendees) { this.attendees = attendees; }
+    public Integer getRefundFullDaysBefore() { return refundFullDaysBefore; }
+    public void setRefundFullDaysBefore(Integer value) { this.refundFullDaysBefore = value; }
+    public Integer getRefundPartialDaysBefore() { return refundPartialDaysBefore; }
+    public void setRefundPartialDaysBefore(Integer value) { this.refundPartialDaysBefore = value; }
+    public Integer getRefundPartialRate() { return refundPartialRate; }
+    public void setRefundPartialRate(Integer value) { this.refundPartialRate = value; }
 }

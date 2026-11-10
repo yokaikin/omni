@@ -979,6 +979,9 @@ public class OrderService {
         snapshot.setTeamOrder(Boolean.TRUE.equals(teamOrder));
         snapshot.setSeatSelectionMode(seatSelectionMode);
         snapshot.setTicketTransferAllowed(!Boolean.FALSE.equals(quote.getTicketTransferAllowed()));
+        snapshot.setRefundFullDaysBefore(quote.getRefundFullDaysBefore());
+        snapshot.setRefundPartialDaysBefore(quote.getRefundPartialDaysBefore());
+        snapshot.setRefundPartialRate(quote.getRefundPartialRate());
         LocalDateTime now = LocalDateTime.now();
         snapshot.setCreateTime(now);
         snapshot.setUpdateTime(now);
@@ -1401,9 +1404,6 @@ public class OrderService {
                                                                   List<Long> attendeeIds,
                                                                   TicketSalesQuoteResponse quote,
                                                                   int quantity) {
-        if (!Boolean.TRUE.equals(quote.getRealNameRequired())) {
-            return Collections.emptyList();
-        }
         if (attendeeIds == null || attendeeIds.size() != quantity) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "请选择实名观演人");
         }

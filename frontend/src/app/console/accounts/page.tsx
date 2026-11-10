@@ -22,6 +22,7 @@ import { ConsoleTable, CONSOLE_TABLE_HEADER_CLASS } from '@/components/ConsoleTa
 import { ConsoleTableSkeleton } from '@/components/Skeleton'
 import { globalConfirm } from '@/components/GlobalDialog'
 import { Modal } from '@/components/ui/Modal'
+import { PasswordMatchInput } from '@/components/PasswordMatchInput'
 import {
   createOrganizerAdminAccount,
   createSupportAccount,
@@ -36,6 +37,7 @@ import {
   updateSupportAccount,
 } from '@/lib/api'
 import { hasConsolePermission } from '@/lib/console-auth'
+import { validatePasswordPair } from '@/lib/password-validation'
 import type { OrganizerAdminAccountVO, SupportAccountVO } from '@/types/api'
 
 type SupportRole = 'support_manager' | 'support_agent'
@@ -65,6 +67,7 @@ interface AccountForm {
   phone: string
   nickname: string
   password: string
+  confirmPassword: string
   status: number
 }
 
@@ -99,7 +102,7 @@ const ACCOUNT_TABS: AccountTabConfig[] = [
   },
 ]
 
-const emptyForm: AccountForm = { phone: '', nickname: '', password: '', status: 1 }
+const emptyForm: AccountForm = { phone: '', nickname: '', password: '', confirmPassword: '', status: 1 }
 
 function getTabConfig(tab: AccountTab) {
   return ACCOUNT_TABS.find(item => item.type === tab) || ACCOUNT_TABS[0]
@@ -289,6 +292,7 @@ export default function PlatformAccountsPage() {
       phone: account.phone,
       nickname: account.nickname || '',
       password: '',
+      confirmPassword: '',
       status: account.status,
     })
     setAccountDialog({ mode: 'edit', tab: activeTab, accountId: account.id })
@@ -302,8 +306,11 @@ export default function PlatformAccountsPage() {
   const validateForm = () => {
     if (!form.nickname.trim()) return '请填写姓名 / 业务昵称'
     if (!PHONE_PATTERN.test(form.phone.trim())) return '登录手机号需为 11 位手机号'
-    if (accountDialog?.mode === 'create' && !form.password.trim()) return '请填写登录密码'
-    return ''
+    return validatePasswordPair({
+      password: form.password.trim(),
+      confirmPassword: form.confirmPassword.trim(),
+      required: accountDialog?.mode === 'create',
+    })
   }
 
   const submitDialog = async () => {
@@ -646,35 +653,72 @@ export default function PlatformAccountsPage() {
             </>
           )}
         >
-          <div className="grid gap-4">
-            <label className="grid gap-2 text-[13px] font-medium text-gray-700">
-              <span>姓名 / 业务昵称 <span className="text-red-500">*</span></span>
-              <input value={form.nickname} onChange={event => setForm({ ...form, nickname: event.target.value })} placeholder="请输入姓名或业务昵称" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] font-normal outline-none focus:border-[#ff1268]" />
-            </label>
-            <label className="grid gap-2 text-[13px] font-medium text-gray-700">
-              <span>登录手机号 <span className="text-red-500">*</span></span>
-              <input value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} placeholder="请输入 11 位手机号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] font-normal outline-none focus:border-[#ff1268]" />
-              <span className="text-[12px] font-normal text-gray-400">登录手机号需为 11 位手机号</span>
-            </label>
-            <label className="grid gap-2 text-[13px] font-medium text-gray-700">
-              <span>登录密码 {accountDialog.mode === 'create' ? <span className="text-red-500">*</span> : null}</span>
-              <input
-                value={form.password}
-                onChange={event => setForm({ ...form, password: event.target.value })}
-                placeholder={accountDialog.mode === 'edit' ? '重置登录密码，留空则不修改' : '请输入初始登录密码'}
-                type="password"
-                className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] font-normal outline-none focus:border-[#ff1268]"
-              />
-            </label>
-            <label className="grid gap-2 text-[13px] font-medium text-gray-700">
-              <span>职能说明</span>
-              <textarea
-                readOnly
-                value={dialogConfig.description}
-                className="min-h-[86px] resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[13px] font-normal leading-6 text-gray-600 outline-none"
-              />
-            </label>
-          </div>
+          <form
+            autoComplete="off"
+            onSubmit={event => {
+              event.preventDefault()
+              void submitDialog()
+            }}
+          >
+            <input type="text" name="prevent_autofill_user" className="hidden" aria-hidden="true" />
+            <input type="password" name="prevent_autofill_pass" className="hidden" aria-hidden="true" />
+            <div className="grid gap-4">
+              <label className="grid gap-2 text-[13px] font-medium text-gray-700">
+                <span>姓名 / 业务昵称 <span className="text-red-500">*</span></span>
+                <input
+                  value={form.nickname}
+                  autoComplete="off"
+                  onChange={event => setForm({ ...form, nickname: event.target.value })}
+                  placeholder="请输入姓名或业务昵称"
+                  className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] font-normal outline-none focus:border-[#ff1268]"
+                />
+              </label>
+              <label className="grid gap-2 text-[13px] font-medium text-gray-700">
+                <span>登录手机号 <span className="text-red-500">*</span></span>
+                <input
+                  value={form.phone}
+                  autoComplete="off"
+                  onChange={event => setForm({ ...form, phone: event.target.value })}
+                  placeholder="请输入 11 位手机号"
+                  className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] font-normal outline-none focus:border-[#ff1268]"
+                />
+                <span className="text-[12px] font-normal text-gray-400">登录手机号需为 11 位手机号</span>
+              </label>
+              <label className="grid gap-2 text-[13px] font-medium text-gray-700">
+                <span>登录密码 {accountDialog.mode === 'create' ? <span className="text-red-500">*</span> : null}</span>
+                <PasswordMatchInput
+                  value={form.password}
+                  onChange={value => setForm({ ...form, password: value })}
+                  placeholder={accountDialog.mode === 'edit' ? '重置登录密码，留空则不修改' : '请输入初始登录密码'}
+                  name="password"
+                  ariaLabel="设置密码"
+                  caretClassName="caret-gray-900"
+                  className="rounded-lg bg-white"
+                />
+              </label>
+              <label className="grid gap-2 text-[13px] font-medium text-gray-700">
+                <span>确认密码 {accountDialog.mode === 'create' ? <span className="text-red-500">*</span> : null}</span>
+                <PasswordMatchInput
+                  value={form.confirmPassword}
+                  onChange={value => setForm({ ...form, confirmPassword: value })}
+                  compareValue={form.password}
+                  placeholder="请再次输入密码"
+                  name="confirmPassword"
+                  ariaLabel="确认密码"
+                  caretClassName="caret-gray-900"
+                  className="rounded-lg bg-white"
+                />
+              </label>
+              <label className="grid gap-2 text-[13px] font-medium text-gray-700">
+                <span>职能说明</span>
+                <textarea
+                  readOnly
+                  value={dialogConfig.description}
+                  className="min-h-[86px] resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[13px] font-normal leading-6 text-gray-600 outline-none"
+                />
+              </label>
+            </div>
+          </form>
         </Modal>
       ) : null}
     </div>

@@ -71,58 +71,6 @@ describe('TicketClientService', () => {
     });
   });
 
-  it('locks team seats through the internal ticket endpoint', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: jest.fn().mockResolvedValue({
-        code: 200,
-        data: { lockedSeatIds: [501, 502], seatLabels: ['A-1', 'A-2'], matchedStrategy: 'SAME_BLOCK' },
-      }),
-    } as any);
-    const service = new TicketClientService();
-
-    const result = await service.lockTeamSeats({
-      sessionId: 20,
-      ticketTypeId: 30,
-      quantity: 2,
-      strategy: 'SAME_BLOCK',
-      fallbacks: ['SAME_TICKET_TYPE'],
-      lockRequestId: 'TEAM-GRAB-1',
-      lockExpireTime: '2026-05-30T12:15:00.000Z',
-    });
-
-    expect(global.fetch).toHaveBeenCalledWith('http://ticket.local/api/ticket/internal/sales/lock-team-seats', expect.objectContaining({
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': 'internal-token' },
-      body: JSON.stringify({
-        sessionId: 20,
-        ticketTypeId: 30,
-        quantity: 2,
-        strategy: 'SAME_BLOCK',
-        fallbacks: ['SAME_TICKET_TYPE'],
-        lockRequestId: 'TEAM-GRAB-1',
-        lockExpireTime: '2026-05-30T12:15:00.000Z',
-      }),
-    }));
-    expect(result).toEqual({ lockedSeatIds: [501, 502], seatLabels: ['A-1', 'A-2'], matchedStrategy: 'SAME_BLOCK' });
-  });
-
-  it('releases team seat locks through the internal ticket endpoint', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: jest.fn().mockResolvedValue({ code: 200, data: true }),
-    } as any);
-    const service = new TicketClientService();
-
-    await expect(service.releaseTeamSeatLock('TEAM-GRAB-1', [501, 502])).resolves.toBe(true);
-
-    expect(global.fetch).toHaveBeenCalledWith('http://ticket.local/api/ticket/internal/sales/release-team-seat-lock', expect.objectContaining({
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': 'internal-token' },
-      body: JSON.stringify({ lockRequestId: 'TEAM-GRAB-1', seatIds: [501, 502] }),
-    }));
-  });
-
   it('fails during initialization when ticket service URL is missing', () => {
     delete process.env.TICKET_SERVICE_URL;
     process.env.ORDER_SERVICE_URL = 'http://order.local';

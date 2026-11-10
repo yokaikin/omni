@@ -270,78 +270,6 @@ export interface OrderAttendeeVO {
   status: number
 }
 
-export type TeamStatus = 'DRAFT' | 'READY' | 'GRABBING' | 'LOCKED' | 'PAID' | 'FAILED' | 'CANCELLED' | 'EXPIRED'
-export type TeamMemberStatus = 'INVITED' | 'JOINED' | 'CONFIRMED' | 'LEFT'
-export type TeamSeatStrategy = 'STRICT_CONTIGUOUS' | 'SAME_BLOCK' | 'SAME_TICKET_TYPE' | 'FALLBACK'
-export type TeamMemberRole = 'LEADER' | 'MEMBER'
-
-export interface TicketTeamVO {
-  id: number
-  inviteCode: string
-  leaderUserId: number
-  activityId: number
-  sessionId: number
-  ticketTypeId: number
-  activityName?: string | null
-  activityPoster?: string | null
-  ticketTypeName?: string | null
-  venueName?: string | null
-  sessionTime?: string | null
-  size: number
-  strategy: TeamSeatStrategy
-  fallbacks: TeamSeatStrategy[]
-  status: TeamStatus
-  createTime?: string
-  updateTime?: string
-}
-
-export interface TicketTeamMemberVO {
-  id: number
-  teamId: number
-  sessionId?: number
-  userId: number
-  role: TeamMemberRole
-  status: TeamMemberStatus
-  seatId: number | null
-  orderSeatId: number | null
-  seatLabel?: string | null
-  joinTime: string
-}
-
-export interface TicketTeamDetailVO {
-  team: TicketTeamVO
-  members: TicketTeamMemberVO[]
-  canTriggerGrab: boolean
-  canPay: boolean
-  latestGrabRequestId: string | null
-  latestOrderId: number | null
-}
-
-export interface CreateTeamGrabPayload {
-  activityId: number
-  sessionId: number
-  ticketTypeId: number
-  strategy: TeamSeatStrategy
-  fallbacks: TeamSeatStrategy[]
-}
-
-export interface UpdateTeamGrabStrategyPayload {
-  strategy: TeamSeatStrategy
-  fallbacks: TeamSeatStrategy[]
-}
-
-export interface TeamGrabTriggerResult {
-  requestId: string
-  queueSeq: number
-  queueRank: number
-  teamStatus: TeamStatus
-}
-
-export interface TeamPaymentSyncResult {
-  teamId: number
-  synced: boolean
-}
-
 export interface OrganizerApplicationVO {
   id: number
   userId: number
@@ -648,6 +576,7 @@ export interface TicketFinderResult {
   price: number
   availableQuantity: number
   saleStatus: string
+  explanation?: string | null
 }
 
 export interface FinderResponse {
@@ -704,6 +633,9 @@ export interface ActivityEntity {
   perUserLimit?: number | null
   realNameRequired?: boolean | null
   ticketTransferAllowed?: boolean | null
+  refundFullDaysBefore?: number | null
+  refundPartialDaysBefore?: number | null
+  refundPartialRate?: number | null
   status: number
   createTime: string
   averageRating?: number | null
@@ -1554,6 +1486,9 @@ export interface ActivityDraftPayload {
   perUserLimit?: number | null
   realNameRequired?: boolean | null
   ticketTransferAllowed?: boolean | null
+  refundFullDaysBefore?: number | null
+  refundPartialDaysBefore?: number | null
+  refundPartialRate?: number | null
 }
 
 export interface StationConfigVersionPayload {

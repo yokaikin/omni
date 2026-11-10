@@ -64,10 +64,11 @@ export function getFinderErrorMessage(error: unknown) {
     if (error.code === 400) return error.message || '找票条件不正确，请调整后重试'
     if (error.code === 404) return '暂时找不到相关票务信息，请调整条件后重试'
     if (error.code === 429) return '当前请求较多，请稍后再试'
-    if (error.code === 504 || error.message.includes('超时')) return '找票服务响应超时，请稍后重试'
-    if (error.code === 500 || error.code === 502 || error.code === 503) {
-      return 'AI 找票服务暂时不可用，请稍后重试'
-    }
+    if (error.code === 504) return 'AI 查询时间较长，请稍后重试。'
+    if (error.message.includes('超时')) return '找票服务响应超时，请稍后重试'
+    if (error.code === 502) return 'AI 返回结果未通过系统校验，请重新尝试。'
+    if (error.code === 503) return 'AI 找票服务暂时不可用，请稍后再试。'
+    if (error.code === 500) return 'AI 找票服务暂时不可用，请稍后重试'
   }
   return '找票失败，请稍后重试'
 }

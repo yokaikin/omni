@@ -17,6 +17,10 @@ public class OrderInfoResponse {
     private String activityName;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+    private LocalDateTime sessionTime;
+    private Integer refundFullDaysBefore;
+    private Integer refundPartialDaysBefore;
+    private Integer refundPartialRate;
 
     public Long getId() {
         return id;
@@ -105,4 +109,14 @@ public class OrderInfoResponse {
     public void setUpdateTime(LocalDateTime updateTime) {
         this.updateTime = updateTime;
     }
+
+    public LocalDateTime getSessionTime() { return sessionTime; }
+
+    public void setSessionTime(LocalDateTime sessionTime) { this.sessionTime = sessionTime; }
+    public Integer getRefundFullDaysBefore() { return refundFullDaysBefore; }
+    public void setRefundFullDaysBefore(Integer value) { this.refundFullDaysBefore = value; }
+    public Integer getRefundPartialDaysBefore() { return refundPartialDaysBefore; }
+    public void setRefundPartialDaysBefore(Integer value) { this.refundPartialDaysBefore = value; }
+    public Integer getRefundPartialRate() { return refundPartialRate; }
+    public void setRefundPartialRate(Integer value) { this.refundPartialRate = value; }
 }

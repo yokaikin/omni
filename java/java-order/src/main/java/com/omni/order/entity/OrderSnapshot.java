@@ -38,6 +38,9 @@ public class OrderSnapshot {
     private Boolean teamOrder;
     private String seatSelectionMode;
     private Boolean ticketTransferAllowed;
+    private Integer refundFullDaysBefore;
+    private Integer refundPartialDaysBefore;
+    private Integer refundPartialRate;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -89,6 +92,12 @@ public class OrderSnapshot {
     public void setSeatSelectionMode(String seatSelectionMode) { this.seatSelectionMode = seatSelectionMode; }
     public Boolean getTicketTransferAllowed() { return ticketTransferAllowed; }
     public void setTicketTransferAllowed(Boolean ticketTransferAllowed) { this.ticketTransferAllowed = ticketTransferAllowed; }
+    public Integer getRefundFullDaysBefore() { return refundFullDaysBefore; }
+    public void setRefundFullDaysBefore(Integer value) { this.refundFullDaysBefore = value; }
+    public Integer getRefundPartialDaysBefore() { return refundPartialDaysBefore; }
+    public void setRefundPartialDaysBefore(Integer value) { this.refundPartialDaysBefore = value; }
+    public Integer getRefundPartialRate() { return refundPartialRate; }
+    public void setRefundPartialRate(Integer value) { this.refundPartialRate = value; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
     public LocalDateTime getUpdateTime() { return updateTime; }

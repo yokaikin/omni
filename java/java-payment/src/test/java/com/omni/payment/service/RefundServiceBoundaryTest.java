@@ -865,6 +865,7 @@ class RefundServiceBoundaryTest {
         o.setOrderNo(orderNo);
         o.setAmount(amount);
         o.setStatus(status);
+        o.setSessionTime(LocalDateTime.now().plusDays(31));
         return o;
     }
 

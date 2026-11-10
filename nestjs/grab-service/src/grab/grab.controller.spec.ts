@@ -23,6 +23,7 @@ describe('GrabController', () => {
       sessionId: 101,
       ticketTypeId: 202,
       quantity: 1,
+      attendeeIds: [501],
       idempotencyKey: 'idem-1',
     });
 
@@ -30,6 +31,7 @@ describe('GrabController', () => {
       sessionId: 101,
       ticketTypeId: 202,
       quantity: 1,
+      attendeeIds: [501],
       idempotencyKey: 'idem-1',
     });
     expect(result).toEqual({ code: 200, message: '成功', data: queuedResponse });
@@ -56,6 +58,7 @@ describe('GrabController', () => {
       sessionId: 101,
       ticketTypeId: 202,
       quantity: 1,
+      attendeeIds: [501],
       idempotencyKey: 'idem-body-user',
     } as any);
 
@@ -64,6 +67,7 @@ describe('GrabController', () => {
       sessionId: 101,
       ticketTypeId: 202,
       quantity: 1,
+      attendeeIds: [501],
       idempotencyKey: 'idem-body-user',
     });
     expect(service.submitRequest).not.toHaveBeenCalledWith(9999, expect.anything());

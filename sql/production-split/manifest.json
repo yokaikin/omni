@@ -15,7 +15,7 @@
       "targetInstance": "pg-ticket",
       "targetDatabase": "omni_ticket_split",
       "tables": ["category", "artist", "activity_artist", "tour", "station", "activity", "venue", "venue_application", "venue_application_material", "session", "ticket_type", "ticket_type_area", "session_seat", "venue_area", "venue_seat", "reservation", "performance_subscription", "activity_review", "activity_question", "activity_review_report", "activity_marketing_rule", "activity_risk_resolution", "search_history", "seat", "stock_log", "venue_default_layout", "venue_default_layout_section", "activity_seat_layout", "activity_seat_layout_section", "session_seat_layout", "session_seat_layout_section", "seat_layout_version", "seat_layout_version_block", "seat_layout_version_override", "seat_layout_version_ticket_group", "seat_layout_version_group_binding", "seat_block", "seat_override", "ticket_group", "ticket_asset", "private_asset", "station_config_version"],
-      "migrations": ["ticket/20260522_activity_multi_artist_phase1.sql", "ticket/20260522_activity_artist_governance_phase2.sql", "ticket/20260522_activity_risk_response_phase3.sql", "ticket/20260523_private_asset.sql", "ticket/20260524_seatcraft_polygon_block.sql", "ticket/20260524_seatcraft_layout_versioning.sql", "ticket/20260525_station_config_version.sql", "ticket/20260525_restore_released_seat_ticket_type_binding.sql", "ticket/20260530_team_seat_lock.sql", "ticket/20260530_activity_real_name_required.sql", "ticket/20260601_ticket_transfer_rule.sql", "ticket/20260601_performance_subscription.sql", "ticket/20260601_activity_marketing_rule.sql", "ticket/20260608_activity_engagement_formalization.sql", "ticket/20260609_search_history.sql", "ticket/20260610_artist_avatar_backfill.sql", "ticket/20260611_venue_id_cleanup.sql", "ticket/20260612_artist_avatar_completion.sql", "ticket/20260613_activity_engagement_drawer.sql", "ticket/20260912_venue_application_material.sql"]
+      "migrations": ["ticket/20260522_activity_multi_artist_phase1.sql", "ticket/20260522_activity_artist_governance_phase2.sql", "ticket/20260522_activity_risk_response_phase3.sql", "ticket/20260523_private_asset.sql", "ticket/20260524_seatcraft_polygon_block.sql", "ticket/20260524_seatcraft_layout_versioning.sql", "ticket/20260525_station_config_version.sql", "ticket/20260525_restore_released_seat_ticket_type_binding.sql", "ticket/20260530_team_seat_lock.sql", "ticket/20260530_activity_real_name_required.sql", "ticket/20260601_ticket_transfer_rule.sql", "ticket/20260601_performance_subscription.sql", "ticket/20260601_activity_marketing_rule.sql", "ticket/20260608_activity_engagement_formalization.sql", "ticket/20260609_search_history.sql", "ticket/20260610_artist_avatar_backfill.sql", "ticket/20260611_venue_id_cleanup.sql", "ticket/20260612_artist_avatar_completion.sql", "ticket/20260613_activity_engagement_drawer.sql", "ticket/20260912_venue_application_material.sql", "ticket/20261110_activity_refund_policy.sql"]
     },
     {
       "service": "java-order",
@@ -33,7 +33,8 @@
         "order/20260601_electronic_ticket.sql",
         "order/20260601_ticket_transfer.sql",
         "order/20260604_electronic_ticket_sequence_sync.sql",
-        "order/20260606_ticket_check_in_record.sql"
+        "order/20260606_ticket_check_in_record.sql",
+        "order/20261110_order_snapshot_refund_policy.sql"
       ]
     },
     {

@@ -21,7 +21,9 @@ public interface OrderMapper extends BaseMapper<Order> {
             "os.grab_request_id AS grabRequestId, os.requested_ticket_type_id AS requestedTicketTypeId, " +
             "os.matched_ticket_type_id AS matchedTicketTypeId, os.auto_downgraded AS autoDowngraded, " +
             "os.team_id AS teamId, os.team_grab_request_id AS teamGrabRequestId, os.team_order AS teamOrder, " +
-            "os.seat_selection_mode AS seatSelectionMode ";
+            "os.seat_selection_mode AS seatSelectionMode, " +
+            "os.refund_full_days_before AS refundFullDaysBefore, os.refund_partial_days_before AS refundPartialDaysBefore, " +
+            "os.refund_partial_rate AS refundPartialRate ";
 
     String ORDER_LIST_JOINS = "FROM \"order\" o " +
             "LEFT JOIN order_snapshot os ON os.order_id = o.id ";

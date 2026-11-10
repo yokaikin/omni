@@ -21,6 +21,9 @@ public class TicketSalesQuoteResponse {
     private Integer perUserLimit;
     private Boolean realNameRequired;
     private Boolean ticketTransferAllowed;
+    private Integer refundFullDaysBefore;
+    private Integer refundPartialDaysBefore;
+    private Integer refundPartialRate;
 
     public Long getSessionId() { return sessionId; }
     public void setSessionId(Long sessionId) { this.sessionId = sessionId; }
@@ -56,4 +59,10 @@ public class TicketSalesQuoteResponse {
     public void setRealNameRequired(Boolean realNameRequired) { this.realNameRequired = realNameRequired; }
     public Boolean getTicketTransferAllowed() { return ticketTransferAllowed; }
     public void setTicketTransferAllowed(Boolean ticketTransferAllowed) { this.ticketTransferAllowed = ticketTransferAllowed; }
+    public Integer getRefundFullDaysBefore() { return refundFullDaysBefore; }
+    public void setRefundFullDaysBefore(Integer value) { this.refundFullDaysBefore = value; }
+    public Integer getRefundPartialDaysBefore() { return refundPartialDaysBefore; }
+    public void setRefundPartialDaysBefore(Integer value) { this.refundPartialDaysBefore = value; }
+    public Integer getRefundPartialRate() { return refundPartialRate; }
+    public void setRefundPartialRate(Integer value) { this.refundPartialRate = value; }
 }

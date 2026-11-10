@@ -22,20 +22,6 @@ export interface CreatedOrderResponse {
   amount: number;
 }
 
-export interface CreateTeamOrderWithLockedSeatsInput {
-  teamId: number;
-  userId: number;
-  payerUserId: number;
-  sessionId: number;
-  ticketTypeId: number;
-  quantity: number;
-  seats: Array<{ sessionSeatId: number; seatLabel: string }>;
-  teamGrabRequestId: string;
-  grabRequestId: string;
-  matchedStrategy: string | null;
-  authorizedMaxUnitPrice: number;
-}
-
 export interface GrabOrderLookupResponse {
   id: number;
   orderNo: string;
@@ -146,23 +132,6 @@ export class OrderClientService {
       matchedTicketTypeId: input.ticketTypeId,
       autoDowngraded: false,
     });
-  }
-
-  async createTeamOrderWithLockedSeats(input: CreateTeamOrderWithLockedSeatsInput): Promise<CreatedOrderResponse> {
-    if (!this.internalToken) {
-      throw new Error('订单内部接口令牌未配置');
-    }
-
-    const response = await fetch(`${this.baseUrl}/api/order/internal/team/create-with-locked-seats`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': this.internalToken },
-      body: JSON.stringify(input),
-    });
-    const result = await response.json();
-    if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || '组队订单创建失败');
-    }
-    return result.data;
   }
 
   async getOrder(orderId: number): Promise<OrderStatusResponse> {

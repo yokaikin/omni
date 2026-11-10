@@ -76,7 +76,16 @@ public class ActivityDraftService {
         activity.setPublishStatus("draft");
         activity.setSeatMapVisibility(seatMapVisibility);
         activity.setPerUserLimit(parsePerUserLimit(body.get("perUserLimit")));
-        activity.setRealNameRequired(parseBooleanFlag(body.get("realNameRequired")));
+        int fullDaysBefore = parsePositiveInteger(body.get("refundFullDaysBefore"), 30, "全额退款提前天数");
+        int partialDaysBefore = parsePositiveInteger(body.get("refundPartialDaysBefore"), 7, "折扣退款提前天数");
+        int partialRate = parsePositiveInteger(body.get("refundPartialRate"), 80, "折扣退款比例");
+        if (fullDaysBefore <= partialDaysBefore || partialRate > 100) {
+            throw new BusinessException(400, "退款规则需满足全额退款天数大于折扣退款天数，折扣比例不超过100%");
+        }
+        activity.setRefundFullDaysBefore(fullDaysBefore);
+        activity.setRefundPartialDaysBefore(partialDaysBefore);
+        activity.setRefundPartialRate(partialRate);
+        activity.setRealNameRequired(true);
         activity.setTicketTransferAllowed(!Boolean.FALSE.equals(parseBooleanFlag(body.get("ticketTransferAllowed"))));
         activity.setStatus(1);
         activity.setOrganizerId(userId);
@@ -162,6 +171,18 @@ public class ActivityDraftService {
             return parsed;
         } catch (NumberFormatException e) {
             throw new BusinessException(400, "个人限购张数必须为数字");
+        }
+    }
+
+    private int parsePositiveInteger(Object value, int defaultValue, String label) {
+        String text = optionalText(value);
+        if (text == null) return defaultValue;
+        try {
+            int parsed = Integer.parseInt(text);
+            if (parsed <= 0) throw new BusinessException(400, label + "必须大于0");
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw new BusinessException(400, label + "必须为整数");
         }
     }
 

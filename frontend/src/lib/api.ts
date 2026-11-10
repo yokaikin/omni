@@ -6,7 +6,6 @@ import type {
   ApiResult,
   AssetUploadVO,
   ChangePasswordRequest,
-  CreateTeamGrabPayload,
   GrabProgressResult,
   GrabRequestResult,
   LoginResponse,
@@ -29,11 +28,6 @@ import type {
   SessionVisibleStockResult,
   SubmitGrabRequestPayload,
   SubjectType,
-  TeamGrabTriggerResult,
-  TeamPaymentSyncResult,
-  TicketTeamDetailVO,
-  TicketTeamVO,
-  UpdateTeamGrabStrategyPayload,
   ActivityMarketingRulePayload,
   CsAuditRequest,
   CsCopilotEditRequest,
@@ -1552,11 +1546,6 @@ export async function getGrabProgress(requestId: string) {
   return request<GrabProgressResult>(`/api/grab/requests/${encodeURIComponent(requestId)}/progress`)
 }
 
-export async function getTeamGrabProgress(teamId: number, requestId: string) {
-  assertPositiveInteger(teamId, 'teamId')
-  return request<GrabProgressResult>(`/api/grab/teams/${teamId}/requests/${encodeURIComponent(requestId)}/progress`)
-}
-
 export async function getGrabVisibleStock(sessionId: number, ticketTypeIds: number[]) {
   const params = new URLSearchParams()
   params.set('ticketTypeIds', ticketTypeIds.join(','))
@@ -1567,7 +1556,7 @@ export async function cancelGrabRequest(requestId: string) {
   return request<GrabRequestResult>(`/api/grab/requests/${encodeURIComponent(requestId)}/cancel`, { method: 'POST' })
 }
 
-export async function createWaitlistEntry(params: { sessionId: number; ticketTypeId: number; quantity: number; attendeeIds?: number[] }) {
+export async function createWaitlistEntry(params: { sessionId: number; ticketTypeId: number; quantity: number; attendeeIds: number[] }) {
   return request<import('@/types/api').WaitlistEntryVO>('/api/waitlist/entries', {
     method: 'POST',
     body: JSON.stringify(params),
@@ -1581,88 +1570,6 @@ export async function listMyWaitlistEntries() {
 export async function cancelWaitlistEntry(id: number) {
   assertPositiveInteger(id, 'waitlistId')
   return request<import('@/types/api').WaitlistEntryVO>(`/api/waitlist/entries/${id}`, { method: 'DELETE' })
-}
-
-export async function createTeamGrab(params: CreateTeamGrabPayload): Promise<TicketTeamVO> {
-  return request<TicketTeamVO>('/api/grab/teams', {
-    method: 'POST',
-    body: JSON.stringify(params),
-  })
-}
-
-export async function getTeamGrab(teamId: number): Promise<TicketTeamDetailVO> {
-  assertPositiveInteger(teamId, 'teamId')
-  return request<TicketTeamDetailVO>(`/api/grab/teams/${teamId}`)
-}
-
-function normalizeInviteCode(inviteCode: string) {
-  return inviteCode.trim().toUpperCase()
-}
-
-export async function joinTeamGrab(teamId: number, inviteCode: string): Promise<TicketTeamVO> {
-  assertPositiveInteger(teamId, 'teamId')
-  return request<TicketTeamVO>(`/api/grab/teams/${teamId}/join`, {
-    method: 'POST',
-    body: JSON.stringify({ inviteCode: normalizeInviteCode(inviteCode) }),
-  })
-}
-
-export async function confirmTeamGrab(teamId: number): Promise<TicketTeamVO> {
-  assertPositiveInteger(teamId, 'teamId')
-  return request<TicketTeamVO>(`/api/grab/teams/${teamId}/confirm`, {
-    method: 'POST',
-  })
-}
-
-export async function leaveTeamGrab(teamId: number): Promise<TicketTeamVO> {
-  assertPositiveInteger(teamId, 'teamId')
-  return request<TicketTeamVO>(`/api/grab/teams/${teamId}/leave`, {
-    method: 'POST',
-  })
-}
-
-export async function removeTeamGrabMember(teamId: number, userId: number): Promise<TicketTeamVO> {
-  assertPositiveInteger(teamId, 'teamId')
-  assertPositiveInteger(userId, 'userId')
-  return request<TicketTeamVO>(`/api/grab/teams/${teamId}/members/${userId}`, {
-    method: 'DELETE',
-  })
-}
-
-export async function updateTeamGrabStrategy(teamId: number, params: UpdateTeamGrabStrategyPayload): Promise<TicketTeamVO> {
-  assertPositiveInteger(teamId, 'teamId')
-  return request<TicketTeamVO>(`/api/grab/teams/${teamId}/strategy`, {
-    method: 'PUT',
-    body: JSON.stringify(params),
-  })
-}
-
-export async function triggerTeamGrab(teamId: number): Promise<TeamGrabTriggerResult> {
-  assertPositiveInteger(teamId, 'teamId')
-  return request<TeamGrabTriggerResult>(`/api/grab/teams/${teamId}/trigger`, {
-    method: 'POST',
-  })
-}
-
-export async function syncTeamGrabPaid(teamId: number): Promise<TeamPaymentSyncResult> {
-  assertPositiveInteger(teamId, 'teamId')
-  return request<TeamPaymentSyncResult>(`/api/grab/teams/${teamId}/sync-paid`, {
-    method: 'POST',
-  })
-}
-
-export async function createOrder(params: { sessionId: number; ticketTypeId: number; quantity: number; unitPrice?: number; attendeeIds?: number[] }) {
-  return request<{ id: number; orderNo: string; amount: number }>('/api/order/create', {
-    method: 'POST',
-    body: JSON.stringify(params),
-  })
-}
-
-export async function createOrderWithSeats(params: { sessionId: number; ticketTypeId: number; seatIds?: number[]; quantity?: number; unitPrice?: number; attendeeIds?: number[] }) {
-  return request<{ id: number; orderNo: string; amount: number }>('/api/order/create-with-seats', {
-    method: 'POST',
-    body: JSON.stringify(params),
-  })
 }
 
 export async function listOrders() {

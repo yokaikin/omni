@@ -161,7 +161,9 @@ public class TicketAvailabilityQueryService {
                 || !Integer.valueOf(1).equals(session.getStatus())
                 || !Integer.valueOf(1).equals(venue.getStatus())
                 || session.getStartTime() == null
-                || session.getStartTime().isBefore(LocalDateTime.now(clock))) {
+                || !session.getStartTime().toLocalDate().isAfter(LocalDate.now(clock.withZone(DEFAULT_ZONE)))
+                || !(session.getEndTime() == null ? session.getStartTime().plusHours(3) : session.getEndTime())
+                        .isAfter(LocalDateTime.now(clock.withZone(DEFAULT_ZONE)))) {
             return false;
         }
         LocalDate from = intent.effectiveDateFrom();

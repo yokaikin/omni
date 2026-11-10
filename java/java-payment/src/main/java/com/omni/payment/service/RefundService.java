@@ -44,6 +44,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -62,6 +63,7 @@ public class RefundService {
     private static final Logger log = LoggerFactory.getLogger(RefundService.class);
 
     private static final Integer ORDER_STATUS_PAID = 2;
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final Integer REFUND_STATUS_PENDING = 0;
     private static final Integer REFUND_STATUS_REFUNDED = 1;
     private static final Integer REFUND_STATUS_REJECTED = 2;
@@ -170,8 +172,22 @@ public class RefundService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "可退款票数不足");
         }
         validateOrderSeatIds(orderSeatIds, refundQuantity, options, false);
+        LocalDateTime sessionTime = order.getSessionTime();
+        LocalDateTime now = LocalDateTime.now(BUSINESS_ZONE);
+        if (sessionTime == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "订单缺少演出时间，暂时无法计算退票金额");
+        }
+        int fullDaysBefore = order.getRefundFullDaysBefore() == null ? 30 : order.getRefundFullDaysBefore();
+        int partialDaysBefore = order.getRefundPartialDaysBefore() == null ? 7 : order.getRefundPartialDaysBefore();
+        int partialRate = order.getRefundPartialRate() == null ? 80 : order.getRefundPartialRate();
+        if (!now.isBefore(sessionTime.minusDays(partialDaysBefore))) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "开演前" + partialDaysBefore + "天内不可申请退票");
+        }
+        BigDecimal refundRate = now.isBefore(sessionTime.minusDays(fullDaysBefore))
+                ? BigDecimal.ONE : BigDecimal.valueOf(partialRate).movePointLeft(2);
         BigDecimal amount = normalizeAmount(options.getUnitPrice())
                 .multiply(BigDecimal.valueOf(refundQuantity))
+                .multiply(refundRate)
                 .setScale(2, RoundingMode.HALF_UP);
         String refundType = refundQuantity >= refundableQuantity && refundedQuantity == 0 ? "full" : "partial";
 

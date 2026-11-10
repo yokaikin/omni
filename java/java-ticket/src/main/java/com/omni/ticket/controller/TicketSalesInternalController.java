@@ -4,11 +4,6 @@ import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.omni.common.result.Result;
 import com.omni.ticket.config.TicketSentinelConfig;
-import com.omni.ticket.dto.TeamSeatLockReleaseRequest;
-import com.omni.ticket.dto.TeamSeatLockRequest;
-import com.omni.ticket.dto.TeamSeatLockResponse;
-import com.omni.ticket.dto.TeamSeatLockValidationRequest;
-import com.omni.ticket.dto.TeamSeatLockValidationResponse;
 import com.omni.ticket.dto.TicketPurchaseContextRequest;
 import com.omni.ticket.dto.TicketPurchaseContextResponse;
 import com.omni.ticket.dto.TicketTypeVisibleResponse;
@@ -96,33 +91,6 @@ public class TicketSalesInternalController {
 
     public Result<TicketSalesSeatLockResponse> lockSeatsBlocked(TicketSalesLockRequest request, String token, BlockException exception) {
         return Result.fail(429, "系统繁忙，请稍后重试");
-    }
-
-    @PostMapping("/lock-team-seats")
-    public Result<TeamSeatLockResponse> lockTeamSeats(@RequestBody TeamSeatLockRequest request,
-                                                       @RequestHeader(value = "X-Internal-Token", required = false) String token) {
-        if (!isValidInternalToken(token)) {
-            return Result.fail(403, "forbidden");
-        }
-        return Result.success(service.lockTeamSeats(request));
-    }
-
-    @PostMapping("/validate-team-seat-lock")
-    public Result<TeamSeatLockValidationResponse> validateTeamSeatLock(@RequestBody TeamSeatLockValidationRequest request,
-                                                                       @RequestHeader(value = "X-Internal-Token", required = false) String token) {
-        if (!isValidInternalToken(token)) {
-            return Result.fail(403, "forbidden");
-        }
-        return Result.success(service.validateTeamSeatLock(request));
-    }
-
-    @PostMapping("/release-team-seat-lock")
-    public Result<Boolean> releaseTeamSeatLock(@RequestBody TeamSeatLockReleaseRequest request,
-                                               @RequestHeader(value = "X-Internal-Token", required = false) String token) {
-        if (!isValidInternalToken(token)) {
-            return Result.fail(403, "forbidden");
-        }
-        return Result.success(service.releaseTeamSeatLock(request));
     }
 
     @PostMapping("/confirm-sold")

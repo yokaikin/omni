@@ -1209,7 +1209,12 @@ public class AdminController {
         } catch (IllegalArgumentException e) {
             return Result.fail(400, e.getMessage());
         }
-        activity.setRealNameRequired(parseBooleanFlag(safeBody.get("realNameRequired")));
+        try {
+            setRefundPolicy(activity, safeBody);
+        } catch (IllegalArgumentException e) {
+            return Result.fail(400, e.getMessage());
+        }
+        activity.setRealNameRequired(true);
         activity.setTicketTransferAllowed(!Boolean.FALSE.equals(parseBooleanFlag(safeBody.get("ticketTransferAllowed"))));
         activity.setName(name);
         activity.setDescription(safeBody.get("description") != null ? safeBody.get("description").toString() : null);
@@ -1284,9 +1289,12 @@ public class AdminController {
                 return Result.fail(400, e.getMessage());
             }
         }
-        if (body.containsKey("realNameRequired")) {
-            activity.setRealNameRequired(parseBooleanFlag(body.get("realNameRequired")));
+        try {
+            setRefundPolicy(activity, body);
+        } catch (IllegalArgumentException e) {
+            return Result.fail(400, e.getMessage());
         }
+        activity.setRealNameRequired(true);
         if (body.containsKey("ticketTransferAllowed")) {
             activity.setTicketTransferAllowed(!Boolean.FALSE.equals(parseBooleanFlag(body.get("ticketTransferAllowed"))));
         }
@@ -1500,6 +1508,29 @@ public class AdminController {
             return parsed;
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("个人限购张数必须为数字");
+        }
+    }
+
+    private void setRefundPolicy(Activity activity, Map<String, Object> body) {
+        Integer fullDays = parsePositiveInteger(body.get("refundFullDaysBefore"), activity.getRefundFullDaysBefore() == null ? 30 : activity.getRefundFullDaysBefore(), "全额退款提前天数");
+        Integer partialDays = parsePositiveInteger(body.get("refundPartialDaysBefore"), activity.getRefundPartialDaysBefore() == null ? 7 : activity.getRefundPartialDaysBefore(), "折扣退款提前天数");
+        Integer partialRate = parsePositiveInteger(body.get("refundPartialRate"), activity.getRefundPartialRate() == null ? 80 : activity.getRefundPartialRate(), "折扣退款比例");
+        if (fullDays <= partialDays || partialRate > 100) {
+            throw new IllegalArgumentException("退款规则需满足全额退款天数大于折扣退款天数，折扣比例不超过100%");
+        }
+        activity.setRefundFullDaysBefore(fullDays);
+        activity.setRefundPartialDaysBefore(partialDays);
+        activity.setRefundPartialRate(partialRate);
+    }
+
+    private Integer parsePositiveInteger(Object value, int defaultValue, String label) {
+        if (value == null || value.toString().trim().isEmpty()) return defaultValue;
+        try {
+            int parsed = Integer.parseInt(value.toString().trim());
+            if (parsed <= 0) throw new IllegalArgumentException(label + "必须大于0");
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(label + "必须为整数");
         }
     }
 

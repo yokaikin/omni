@@ -1,13 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
-import { TeamGrabRepository } from '../team-grab/team-grab.repository';
-import { TeamGrabController } from '../team-grab/team-grab.controller';
-import { NotificationClientService } from '../team-grab/notification-client.service';
-import { TeamLockRecoveryService } from '../team-grab/team-lock-recovery.service';
-import { TeamGrabProcessorService } from '../team-grab/team-grab-processor.service';
-import { TeamGrabService } from '../team-grab/team-grab.service';
-import { TeamPaymentSyncService } from '../team-grab/team-payment-sync.service';
 import { GrabAdmissionService } from './grab-admission.service';
 import { GrabCompensationService } from './grab-compensation.service';
 import { GrabController, GrabInternalController, GrabSessionController } from './grab.controller';
@@ -25,7 +18,7 @@ import { VisibleStockService } from './visible-stock.service';
 
 @Module({
   imports: [AuthModule, DatabaseModule],
-  controllers: [GrabController, GrabInternalController, GrabSessionController, GrabOpsController, TeamGrabController],
+  controllers: [GrabController, GrabInternalController, GrabSessionController, GrabOpsController],
   providers: [
     GrabService,
     GrabRepository,
@@ -39,13 +32,7 @@ import { VisibleStockService } from './visible-stock.service';
     RedisService,
     TicketClientService,
     VisibleStockService,
-    TeamGrabRepository,
-    TeamGrabService,
-    TeamGrabProcessorService,
-    TeamPaymentSyncService,
-    TeamLockRecoveryService,
-    NotificationClientService,
   ],
-  exports: [GrabService, TeamGrabService],
+  exports: [GrabService],
 })
 export class GrabModule {}

@@ -2,11 +2,6 @@ package com.omni.ticket.controller;
 
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.omni.common.result.Result;
-import com.omni.ticket.dto.TeamSeatLockReleaseRequest;
-import com.omni.ticket.dto.TeamSeatLockRequest;
-import com.omni.ticket.dto.TeamSeatLockResponse;
-import com.omni.ticket.dto.TeamSeatLockValidationRequest;
-import com.omni.ticket.dto.TeamSeatLockValidationResponse;
 import com.omni.ticket.dto.TicketPurchaseContextRequest;
 import com.omni.ticket.dto.TicketPurchaseContextResponse;
 import com.omni.ticket.dto.TicketTypeVisibleResponse;
@@ -148,67 +143,4 @@ class TicketSalesInternalControllerTest {
         verifyNoInteractions(service);
     }
 
-    @Test
-    void lockTeamSeatsRejectsMissingToken() {
-        Result<TeamSeatLockResponse> result = controller.lockTeamSeats(new TeamSeatLockRequest(), null);
-
-        assertEquals(403, result.getCode());
-        verifyNoInteractions(service);
-    }
-
-    @Test
-    void lockTeamSeatsDelegatesWhenTokenMatches() {
-        TeamSeatLockRequest request = new TeamSeatLockRequest();
-        TeamSeatLockResponse response = new TeamSeatLockResponse();
-        response.setLockedSeatIds(List.of(501L, 502L));
-        when(service.lockTeamSeats(request)).thenReturn(response);
-
-        Result<TeamSeatLockResponse> result = controller.lockTeamSeats(request, "test-internal-token");
-
-        assertEquals(200, result.getCode());
-        assertEquals(List.of(501L, 502L), result.getData().getLockedSeatIds());
-        verify(service).lockTeamSeats(request);
-    }
-
-    @Test
-    void validateTeamSeatLockDelegatesWhenTokenMatches() {
-        TeamSeatLockValidationRequest request = new TeamSeatLockValidationRequest();
-        TeamSeatLockValidationResponse response = new TeamSeatLockValidationResponse();
-        response.setValid(true);
-        when(service.validateTeamSeatLock(request)).thenReturn(response);
-
-        Result<TeamSeatLockValidationResponse> result = controller.validateTeamSeatLock(request, "test-internal-token");
-
-        assertEquals(200, result.getCode());
-        assertEquals(true, result.getData().getValid());
-        verify(service).validateTeamSeatLock(request);
-    }
-
-    @Test
-    void validateTeamSeatLockRejectsMissingToken() {
-        Result<TeamSeatLockValidationResponse> result = controller.validateTeamSeatLock(new TeamSeatLockValidationRequest(), null);
-
-        assertEquals(403, result.getCode());
-        verifyNoInteractions(service);
-    }
-
-    @Test
-    void releaseTeamSeatLockRejectsMissingToken() {
-        Result<Boolean> result = controller.releaseTeamSeatLock(new TeamSeatLockReleaseRequest(), null);
-
-        assertEquals(403, result.getCode());
-        verifyNoInteractions(service);
-    }
-
-    @Test
-    void releaseTeamSeatLockDelegatesWhenTokenMatches() {
-        TeamSeatLockReleaseRequest request = new TeamSeatLockReleaseRequest();
-        when(service.releaseTeamSeatLock(request)).thenReturn(true);
-
-        Result<Boolean> result = controller.releaseTeamSeatLock(request, "test-internal-token");
-
-        assertEquals(200, result.getCode());
-        assertEquals(true, result.getData());
-        verify(service).releaseTeamSeatLock(request);
-    }
 }

@@ -33,6 +33,9 @@ public class Activity {
     private String publishStatus;
     private String seatMapVisibility;
     private Integer perUserLimit;
+    private Integer refundFullDaysBefore;
+    private Integer refundPartialDaysBefore;
+    private Integer refundPartialRate;
     private Boolean realNameRequired;
     private Boolean ticketTransferAllowed;
     private Integer status;
@@ -83,6 +86,12 @@ public class Activity {
     public void setSeatMapVisibility(String seatMapVisibility) { this.seatMapVisibility = seatMapVisibility; }
     public Integer getPerUserLimit() { return perUserLimit; }
     public void setPerUserLimit(Integer perUserLimit) { this.perUserLimit = perUserLimit; }
+    public Integer getRefundFullDaysBefore() { return refundFullDaysBefore; }
+    public void setRefundFullDaysBefore(Integer refundFullDaysBefore) { this.refundFullDaysBefore = refundFullDaysBefore; }
+    public Integer getRefundPartialDaysBefore() { return refundPartialDaysBefore; }
+    public void setRefundPartialDaysBefore(Integer refundPartialDaysBefore) { this.refundPartialDaysBefore = refundPartialDaysBefore; }
+    public Integer getRefundPartialRate() { return refundPartialRate; }
+    public void setRefundPartialRate(Integer refundPartialRate) { this.refundPartialRate = refundPartialRate; }
     public Boolean getRealNameRequired() { return realNameRequired; }
     public void setRealNameRequired(Boolean realNameRequired) { this.realNameRequired = realNameRequired; }
     public Boolean getTicketTransferAllowed() { return ticketTransferAllowed; }

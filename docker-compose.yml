@@ -1,5 +1,22 @@
 x-omni-compose-scope: local-development-only
 
+x-java-environment: &java-environment
+  SPRING_PROFILES_ACTIVE: prod-split
+  SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+  SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-123456}
+  NACOS_HOST: nacos
+  NACOS_PORT: 8848
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: 5672
+  RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-123456}
+  INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-omni-local-internal-token}
+  JWT_SECRET: ${JWT_SECRET:-omni-local-jwt-secret-must-be-at-least-32-bytes}
+  OMNI_ID_NO_KEY: ${OMNI_ID_NO_KEY:-omni-local-dev-id-no-key-change-me}
+  SEATA_ENABLED: "true"
+  OMNI_UPLOAD_ROOT: /app/uploads
+  TZ: Asia/Shanghai
+
 services:
   redis:
     image: redis:7-alpine
@@ -48,8 +65,8 @@ services:
       NACOS_ADDR: nacos:8848
       SEATA_CONFIG_DATA_ID: seataServer.properties
       SEATA_CONFIG_GROUP: SEATA_GROUP
-      SEATA_ADVERTISE_HOST: ${SEATA_ADVERTISE_HOST:-}
-      SEATA_ADVERTISE_PORT: ${SEATA_ADVERTISE_PORT:-8091}
+      SEATA_ADVERTISE_HOST: seata-server
+      SEATA_ADVERTISE_PORT: 8091
     command: ["/bin/sh", "/seata-config/import-config.sh"]
     restart: "no"
 
@@ -62,12 +79,12 @@ services:
       seata-config-init:
         condition: service_completed_successfully
     environment:
-      SEATA_IP: ${SEATA_ADVERTISE_HOST:-}
-      SEATA_PORT: ${SEATA_ADVERTISE_PORT:-8091}
-    command: ["-h", "${SEATA_ADVERTISE_HOST:-}", "-p", "${SEATA_ADVERTISE_PORT:-8091}"]
+      SEATA_IP: seata-server
+      SEATA_PORT: 8091
+    command: ["-p", "8091"]
     ports:
-      - "8091:8091"
-      - "7091:7091"
+      - "127.0.0.1:8091:8091"
+      - "127.0.0.1:7091:7091"
     volumes:
       - ./docker/seata/application.yml:/seata-server/resources/application.yml:ro
     healthcheck:
@@ -111,6 +128,156 @@ services:
       timeout: 5s
       retries: 30
 
+  java-gateway:
+    build:
+      context: .
+      dockerfile: docker/java/Dockerfile
+      args:
+        SERVICE_MODULE: java-gateway
+    image: omni/java-gateway:local
+    container_name: omni-java-gateway
+    environment:
+      <<: *java-environment
+      GATEWAY_WAITLIST_SERVICE_URI: http://grab-service:3001
+      GATEWAY_GRAB_SERVICE_URI: http://grab-service:3001
+    depends_on:
+      nacos:
+        condition: service_healthy
+      grab-service:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - omni-uploads:/app/uploads
+    restart: unless-stopped
+
+  java-user:
+    build:
+      context: .
+      dockerfile: docker/java/Dockerfile
+      args:
+        SERVICE_MODULE: java-user
+    image: omni/java-user:local
+    container_name: omni-java-user
+    environment:
+      <<: *java-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/omni_user
+      GRAB_SERVICE_URL: http://grab-service:3001
+    depends_on:
+      nacos:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - omni-uploads:/app/uploads
+    restart: unless-stopped
+
+  java-ticket:
+    build:
+      context: .
+      dockerfile: docker/java/Dockerfile
+      args:
+        SERVICE_MODULE: java-ticket
+    image: omni/java-ticket:local
+    container_name: omni-java-ticket
+    environment:
+      <<: *java-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/omni_ticket_split
+      ELASTICSEARCH_URIS: http://elasticsearch:9200
+      SPRING_ELASTICSEARCH_URIS: http://elasticsearch:9200
+      OMNI_SEARCH_PROVIDER: elasticsearch
+      OMNI_SEARCH_REQUIRE_ELASTICSEARCH: "true"
+    depends_on:
+      nacos:
+        condition: service_healthy
+      seata-server:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8082:8082"
+    volumes:
+      - omni-uploads:/app/uploads
+    restart: unless-stopped
+
+  java-order:
+    build:
+      context: .
+      dockerfile: docker/java/Dockerfile
+      args:
+        SERVICE_MODULE: java-order
+    image: omni/java-order:local
+    container_name: omni-java-order
+    environment:
+      <<: *java-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/omni_order
+    depends_on:
+      nacos:
+        condition: service_healthy
+      seata-server:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8083:8083"
+    volumes:
+      - omni-uploads:/app/uploads
+    restart: unless-stopped
+
+  java-payment:
+    build:
+      context: .
+      dockerfile: docker/java/Dockerfile
+      args:
+        SERVICE_MODULE: java-payment
+    image: omni/java-payment:local
+    container_name: omni-java-payment
+    environment:
+      <<: *java-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/omni_payment
+      ALIPAY_GATEWAY_URL: ${ALIPAY_GATEWAY_URL:-http://java-payment:8084/local-alipay-disabled}
+      ALIPAY_APP_ID: ${ALIPAY_APP_ID:-omni-local-placeholder}
+      ALIPAY_MERCHANT_PRIVATE_KEY: ${ALIPAY_MERCHANT_PRIVATE_KEY:-omni-local-placeholder}
+      ALIPAY_PUBLIC_KEY: ${ALIPAY_PUBLIC_KEY:-omni-local-placeholder}
+      ALIPAY_RETURN_URL: ${ALIPAY_RETURN_URL:-http://localhost:3000/payment/result}
+      ALIPAY_NOTIFY_URL: ${ALIPAY_NOTIFY_URL:-http://localhost:8088/api/payment/alipay/notify}
+    depends_on:
+      nacos:
+        condition: service_healthy
+      seata-server:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8084:8084"
+    restart: unless-stopped
+
+  java-notification:
+    build:
+      context: .
+      dockerfile: docker/java/Dockerfile
+      args:
+        SERVICE_MODULE: java-notification
+    image: omni/java-notification:local
+    container_name: omni-java-notification
+    environment:
+      <<: *java-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/omni_notification
+    depends_on:
+      nacos:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8085:8085"
+    volumes:
+      - omni-uploads:/app/uploads
+    restart: unless-stopped
+
   grab-service:
     image: node:20-alpine
     container_name: omni-grab-service
@@ -120,6 +287,12 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      java-order:
+        condition: service_started
+      java-ticket:
+        condition: service_started
+      java-notification:
+        condition: service_started
     environment:
       GRAB_SERVICE_PORT: 3001
       GRAB_SERVICE_HOST: 0.0.0.0
@@ -130,9 +303,9 @@ services:
       GRAB_DB_PASSWORD: "123456"
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      ORDER_SERVICE_URL: http://host.docker.internal:8083
-      TICKET_SERVICE_URL: http://host.docker.internal:8082
-      NOTIFICATION_SERVICE_URL: http://host.docker.internal:8088
+      ORDER_SERVICE_URL: http://java-order:8083
+      TICKET_SERVICE_URL: http://java-ticket:8082
+      NOTIFICATION_SERVICE_URL: http://java-notification:8085
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-omni-local-internal-token}
       JWT_SECRET: ${JWT_SECRET:-omni-local-jwt-secret-must-be-at-least-32-bytes}
       RABBITMQ_HOST: rabbitmq
@@ -145,6 +318,7 @@ services:
       - ./nestjs/grab-service:/app
       - grab-node-modules:/app/node_modules
     command: ["sh", "-c", "npm ci && npm run start:dev"]
+    restart: unless-stopped
 
   frontend:
     image: node:24-alpine
@@ -152,7 +326,7 @@ services:
     working_dir: /app
     environment:
       WATCHPACK_POLLING: "true"
-      API_PROXY_TARGET: http://host.docker.internal:8088
+      API_PROXY_TARGET: http://java-gateway:8088
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
     ports:
       - "3000:3000"
@@ -162,6 +336,11 @@ services:
     tmpfs:
       - /app/.next
     command: ["sh", "-c", "corepack enable && pnpm install --frozen-lockfile --registry=https://registry.npmmirror.com && pnpm dev --hostname 0.0.0.0"]
+    depends_on:
+      java-gateway:
+        condition: service_started
+      grab-service:
+        condition: service_started
 
 volumes:
   omni-redis-data:
@@ -171,3 +350,4 @@ volumes:
   omni-nacos-logs:
   frontend-node-modules:
   grab-node-modules:
+  omni-uploads:

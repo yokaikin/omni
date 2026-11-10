@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, use, useMemo, useRef } from 'react'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Ban, Bell, CalendarDays, Check, Info, Clock3, Heart, MapPin, MessageCircle, ShieldCheck, Sparkles, Star, Ticket, UserCheck, UserRound, UsersRound } from 'lucide-react'
 import { Header } from '@/components/Header'
@@ -11,14 +10,13 @@ import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelec
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
 import { SafeImage } from '@/components/SafeImage'
-import { cancelGrabRequest, cancelSubscription, createActivityQuestion, createAlipayPagePay, createSubscription, createTeamGrab, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, listActivities, listActivityQuestions, listActivityReviews, listSubscriptions, listUserAttendees, recordUserBrowseHistory, reportActivityReview, submitGrabRequest } from '@/lib/api'
+import { cancelGrabRequest, cancelSubscription, createActivityQuestion, createAlipayPagePay, createSubscription, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, listActivities, listActivityQuestions, listActivityReviews, listSubscriptions, listUserAttendees, recordUserBrowseHistory, reportActivityReview, submitGrabRequest } from '@/lib/api'
 import { captureAnalyticsEvent } from '@/lib/analytics'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, canShowWaitlistEntry, getPurchaseConfirmCopy, getPurchaseQuantityMax, getWaitlistQuantityMax, shouldResetGrabIdempotencyForStatus, type PurchaseConfirmMode } from '@/lib/purchase-intent'
 import { startGrabProgressPolling } from '@/lib/grab-progress-polling'
 import { getCountdownText } from '@/lib/subscription'
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
-import { defaultTeamFallbacks } from '@/lib/team-grab'
 import { getAutoDowngradeDisplay, getGrabProgressDisplayMessage, getQueueRankTrendLabel, localizeGrabProgressMessage } from '@/lib/grab-progress'
 import { canJoinWaitlistFromGrabStatus } from '@/lib/waitlist'
 import { toActivitySaleStatus } from '@/lib/activity-sale-status'
@@ -28,6 +26,7 @@ import { findActivitySubscriptionAction, getActivitySubscriptionActionLabel, get
 import { buildActivityDetailTabs, type ActivityDetailTabKey } from '@/lib/activity-detail-content'
 import { buildActivityDetailRecommendations, type ActivityDetailRecommendation } from '@/lib/activity-recommendations'
 import { resolveInitialPurchaseSelection } from '@/lib/activity-detail-selection'
+import { requestOpenAiTicketFinder } from '@/lib/ai-ticket-finder-modal'
 import type { ActivityDetailVO, ActivityQuestionVO, ActivityReviewListVO, ActivityVO, GrabProgressResult, PagePayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, StationPurchaseDetail, TicketTypeEntity, UserAttendeeVO } from '@/types/api'
 
 const TERMINAL_GRAB_STATUSES = new Set(['ORDER_CREATED', 'SOLD_OUT', 'LIMITED', 'FAILED', 'PENDING_RECOVERY', 'EXPIRED'])
@@ -279,7 +278,6 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [grabProgress, setGrabProgress] = useState<GrabProgressResult | null>(null)
   const [grabProgressOpen, setGrabProgressOpen] = useState(false)
   const [progressPaymentOpening, setProgressPaymentOpening] = useState(false)
-  const [teamActionLoading, setTeamActionLoading] = useState(false)
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false)
   const [waitlistMessage, setWaitlistMessage] = useState('')
   const [subscriptionLoading, setSubscriptionLoading] = useState<string | null>(null)
@@ -370,7 +368,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const currentProgressStock = grabProgress?.currentTicketTypeId != null && visibleStock
     ? visibleStock.ticketTypes.find(ticket => ticket.ticketTypeId === grabProgress.currentTicketTypeId)
     : null
-  const realNameRequired = Boolean(detail?.activity.realNameRequired)
+  const realNameRequired = true
   const selectedAttendeeSummary = useMemo(
     () => formatAttendeeSummary(attendees, selectedAttendeeIds),
     [attendees, selectedAttendeeIds],
@@ -878,76 +876,6 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     resetGrabIdempotencyKey()
   }
 
-  const ensureTeamSelection = () => {
-    if (!isAuthenticated()) {
-      router.push(`/login?ru=/activity/${id}`)
-      return false
-    }
-    if (!selectedSession || !selectedTicket) {
-      void globalAlert('请先选择场次和票档')
-      return false
-    }
-    return true
-  }
-
-  const handleCreateTeam = async () => {
-    if (!ensureTeamSelection() || !selectedSession || !selectedTicket) return
-
-    setTeamActionLoading(true)
-    try {
-      const team = await createTeamGrab({
-        activityId: detail?.activity.id ?? Number(id),
-        sessionId: selectedSession.session.id,
-        ticketTypeId: selectedTicket.id,
-        strategy: 'STRICT_CONTIGUOUS',
-        fallbacks: defaultTeamFallbacks('STRICT_CONTIGUOUS'),
-      })
-      router.push(`/teams/${team.id}`)
-    } catch (err: unknown) {
-      await globalAlert(err instanceof Error ? err.message : '创建小队失败')
-    } finally {
-      setTeamActionLoading(false)
-    }
-  }
-
-  const handleJoinTeam = async () => {
-    if (!isAuthenticated()) {
-      router.push(`/login?ru=/activity/${id}`)
-      return
-    }
-
-    const input = await globalPrompt('请输入小队编号', '加入已有小队', '小队编号')
-    const value = input?.trim()
-    if (!value) return
-    if (!/^\d+$/.test(value)) {
-      await globalAlert('小队编号必须是正整数')
-      return
-    }
-
-    const teamId = Number(value)
-    if (!Number.isSafeInteger(teamId) || teamId <= 0) {
-      await globalAlert('小队编号必须是正整数')
-      return
-    }
-
-    const inviteCodeInput = await globalPrompt('请输入小队邀请码', '加入已有小队', '邀请码')
-    const inviteCode = inviteCodeInput?.trim()
-    if (!inviteCode) {
-      await globalAlert('请输入小队邀请码')
-      return
-    }
-
-    setTeamActionLoading(true)
-    try {
-      const team = await joinTeamGrab(teamId, inviteCode)
-      router.push(`/teams/${team.id}`)
-    } catch (err: unknown) {
-      await globalAlert(err instanceof Error ? err.message : '加入小队失败')
-    } finally {
-      setTeamActionLoading(false)
-    }
-  }
-
   const handleAutoSelectSeats = () => {
     if (!seatMap) return
     const available = seatMap.seats.filter(seat => seat.status === 1 && (seat.ticketTypeId == null || seat.ticketTypeId === selectedTicket?.id))
@@ -987,7 +915,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       selectedTicketId: selectedTicket?.id ?? 0,
       quantity,
       seatIds: allocation.seatIds,
-      attendeeIds: realNameRequired ? selectedAttendeeIds : [],
+      attendeeIds: selectedAttendeeIds,
       allocateRandom: allocation.allocateRandom,
       allowAutoDowngrade: allowAutoDowngrade && !showsSeatCraftSelection,
       ticketTypePreferences,
@@ -1093,7 +1021,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         ticketTypePreferences,
         allowAutoDowngrade: allowAutoDowngrade && !showsSeatCraftSelection,
         seatIds: allocation.seatIds,
-        attendeeIds: realNameRequired ? selectedAttendeeIds : undefined,
+        attendeeIds: selectedAttendeeIds,
         quantity,
         allocateRandom: allocation.allocateRandom,
         idempotencyKey,
@@ -1184,7 +1112,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         sessionId: selectedSession.session.id,
         ticketTypeId: selectedTicket.id,
         quantity,
-        attendeeIds: realNameRequired ? selectedAttendeeIds : undefined,
+        attendeeIds: selectedAttendeeIds,
       })
       setWaitlistMessage(entry.rank != null ? `已加入候补，当前约第 ${entry.rank} 位` : '已加入候补')
       if (options.closeConfirm) {
@@ -1382,7 +1310,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   ]
   const purchaseRulePills = [
     { title: '限购政策', value: activity.perUserLimit && activity.perUserLimit > 0 ? `每单限 ${activity.perUserLimit} 张` : '以提交订单为准' },
-    { title: '实名规则', value: activity.realNameRequired ? '强制实名' : '非强制实名' },
+    { title: '实名规则', value: '强制实名' },
     { title: '转赠支持', value: activity.ticketTransferAllowed ? '支持电子转赠' : '暂不支持转赠' },
     { title: '退换说明', value: '不支持退换' },
   ]
@@ -1410,7 +1338,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   ]
   const attendanceTimeline = [
     { title: '提前 60 分钟到达', value: '预留取票、验票、安检和寻位时间，避免高峰排队影响入场。' },
-    { title: '入场核验', value: activity.realNameRequired ? '请准备电子票二维码和一致身份证件，配合现场核验。' : '请出示电子票二维码，并按现场要求配合核验。' },
+    { title: '入场核验', value: '请准备电子票二维码和一致身份证件，配合现场核验。' },
     { title: '迟到观众安排', value: '演出开始后可能根据现场秩序分批入场，请服从工作人员安排。' },
   ]
   const averageRating = reviewData?.summary.averageRating
@@ -1519,13 +1447,14 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                 ? '倒计时：当前站点排期待公布'
                 : selectedSession?.session.startTime ? `倒计时：${getCountdownText(selectedSession.session.startTime)}` : '倒计时：场次时间待定'}
             </div>
-            <Link
-              href="/ai/ticket-finder"
+            <button
+              type="button"
+              onClick={requestOpenAiTicketFinder}
               className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[#ffd6e7] bg-[#fff8fb] px-3.5 py-2.5 text-[13px] font-medium text-[#e6005c] transition-colors hover:border-[#ff1268] hover:bg-[#fff0f5]"
             >
               <Sparkles className="h-4 w-4" />
               想找更合适的场次？让 AI 帮你找票
-            </Link>
+            </button>
           </div>
         </div>
 
@@ -1819,34 +1748,6 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       )}
                     </div>
                   )}
-                  {selectedTicket && (
-                    <div className="mt-4 rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-4 py-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <div className="text-[14px] font-medium text-[#333]">小队抢票</div>
-                          <div className="mt-1 text-[12px] text-[#999]">和朋友一起确认后抢票</div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={handleCreateTeam}
-                            disabled={teamActionLoading}
-                            className="min-h-10 rounded border-none bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white outline-none transition-colors hover:bg-[#e01058] disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            创建小队
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleJoinTeam}
-                            disabled={teamActionLoading}
-                            className="min-h-10 rounded border border-[#ff1268] bg-white px-4 py-2 text-[14px] font-medium text-[#ff1268] outline-none transition-colors hover:bg-[#fff0f5] disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            加入已有小队
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </>
               )}
                 </>
@@ -2114,7 +2015,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             </div>
 
             <div className="bg-white rounded-lg p-5 border border-[#e5e5e5]">
-              <h2 className="text-[16px] font-medium text-[#111] mb-4">抢票准备检查</h2>
+              <h2 className="text-[16px] font-medium text-[#111] mb-4">排队购票准备检查</h2>
               <div className="space-y-3 text-[13px] text-[#666]">
                 <div className="flex items-center justify-between gap-3">
                   <span>登录状态</span>
@@ -2122,7 +2023,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <span>实名观演人</span>
-                  <span className={realNameRequired ? 'text-[#ff1268]' : 'text-[#16a34a]'}>{realNameRequired ? '需提前维护' : '非必填'}</span>
+                  <span className="text-[#ff1268]">需提前维护</span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <span>场次</span>
@@ -2365,7 +2266,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                           className="mt-1"
                         />
                         <span>
-                          我已阅读退票规则：已支付订单可在订单页申请退款，退款金额以可退票数和支付渠道结果为准；改期、取消或阵容变更可选择专属原因提交。
+                          我已阅读退票规则：开演前{detail?.activity.refundFullDaysBefore ?? 30}天及以上可退全额，开演前{detail?.activity.refundPartialDaysBefore ?? 7}至{Math.max((detail?.activity.refundFullDaysBefore ?? 30) - 1, detail?.activity.refundPartialDaysBefore ?? 7)}天可退票款的{detail?.activity.refundPartialRate ?? 80}%，截止后不可退；演出当天停止售票。改期、取消或阵容变更可选择专属原因提交。
                         </span>
                       </label>
                     )}

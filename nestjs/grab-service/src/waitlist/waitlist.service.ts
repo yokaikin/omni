@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { TicketClientService, PurchaseContextInfo } from '../grab/ticket-client.service';
+import { VisibleStockService } from '../grab/visible-stock.service';
 import { WaitlistRepository } from './waitlist.repository';
 import { CreateWaitlistEntryDto, WaitlistEntryRecord, WaitlistEntryResponse } from './waitlist.types';
 
@@ -8,10 +9,17 @@ export class WaitlistService {
   constructor(
     private readonly repository: WaitlistRepository,
     @Optional() private readonly ticketClient?: TicketClientService,
+    @Optional() private readonly visibleStockService?: VisibleStockService,
   ) {}
 
   async createEntry(userId: number, dto: CreateWaitlistEntryDto): Promise<WaitlistEntryResponse> {
     this.validateCreateDto(dto);
+    if (!this.visibleStockService) throw new BadRequestException('候补库存状态暂不可用');
+    const stock = await this.visibleStockService.getSessionVisibleStock(dto.sessionId, [dto.ticketTypeId]);
+    const ticket = stock.ticketTypes.find((item) => item.ticketTypeId === dto.ticketTypeId);
+    if (!ticket || ticket.visibleStock == null || ticket.visibleStock > 0) {
+      throw new BadRequestException('当前票档尚未售罄，暂不能加入候补');
+    }
     try {
       const result = await this.repository.createEntry({
         userId,
@@ -49,12 +57,12 @@ export class WaitlistService {
     if (!dto || !Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('场次不能为空');
     if (!Number.isInteger(dto.ticketTypeId) || dto.ticketTypeId <= 0) throw new BadRequestException('票档不能为空');
     if (!Number.isInteger(dto.quantity) || dto.quantity <= 0 || dto.quantity > 6) throw new BadRequestException('候补数量必须为 1-6 张');
-    if (dto.attendeeIds && dto.attendeeIds.length > 0) {
-      if (dto.attendeeIds.length !== dto.quantity) throw new BadRequestException('实名观演人数必须与候补数量一致');
-      const unique = new Set(dto.attendeeIds);
-      if (unique.size !== dto.attendeeIds.length || dto.attendeeIds.some((id) => !Number.isInteger(id) || id <= 0)) {
-        throw new BadRequestException('实名观演人信息无效');
-      }
+    if (!dto.attendeeIds || dto.attendeeIds.length !== dto.quantity) {
+      throw new BadRequestException('请选择与候补数量一致的实名观演人');
+    }
+    const unique = new Set(dto.attendeeIds);
+    if (unique.size !== dto.attendeeIds.length || dto.attendeeIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+      throw new BadRequestException('实名观演人信息无效');
     }
   }
 

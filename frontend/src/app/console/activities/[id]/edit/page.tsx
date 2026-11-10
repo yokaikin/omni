@@ -21,6 +21,9 @@ type ActivityForm = {
   perUserLimit: string
   realNameRequired: boolean
   ticketTransferAllowed: boolean
+  refundFullDaysBefore: string
+  refundPartialDaysBefore: string
+  refundPartialRate: string
 }
 
 const emptyForm: ActivityForm = {
@@ -32,6 +35,9 @@ const emptyForm: ActivityForm = {
   perUserLimit: '',
   realNameRequired: false,
   ticketTransferAllowed: true,
+  refundFullDaysBefore: '30',
+  refundPartialDaysBefore: '7',
+  refundPartialRate: '80',
 }
 
 export default function EditActivityPage() {
@@ -88,6 +94,9 @@ export default function EditActivityPage() {
         perUserLimit: activity.perUserLimit == null ? '' : String(activity.perUserLimit),
         realNameRequired: Boolean(activity.realNameRequired),
         ticketTransferAllowed: activity.ticketTransferAllowed !== false,
+        refundFullDaysBefore: String(activity.refundFullDaysBefore ?? 30),
+        refundPartialDaysBefore: String(activity.refundPartialDaysBefore ?? 7),
+        refundPartialRate: String(activity.refundPartialRate ?? 80),
       })
       setCategories(categoryList)
       setSessions(sessionPage.records || [])
@@ -130,6 +139,14 @@ export default function EditActivityPage() {
       setError('个人限购张数必须为正整数')
       return
     }
+    const fullDays = Number(form.refundFullDaysBefore)
+    const partialDays = Number(form.refundPartialDaysBefore)
+    const partialRate = Number(form.refundPartialRate)
+    if (![fullDays, partialDays, partialRate].every(Number.isInteger)
+      || fullDays <= partialDays || partialDays <= 0 || partialRate <= 0 || partialRate > 100) {
+      setError('请检查退票规则：天数必须为正整数，全额退款天数须大于折扣退款天数，折扣比例为1至100%')
+      return
+    }
 
     setSaving(true)
     setError('')
@@ -152,6 +169,9 @@ export default function EditActivityPage() {
         perUserLimit: limitText ? Number(limitText) : null,
         realNameRequired: form.realNameRequired,
         ticketTransferAllowed: form.ticketTransferAllowed,
+        refundFullDaysBefore: fullDays,
+        refundPartialDaysBefore: partialDays,
+        refundPartialRate: partialRate,
       })
       setMessage(isPlatformAdminRole(role) ? '平台活动基础信息已保存' : '我的活动基础信息已保存')
     } catch (err) {
@@ -329,6 +349,15 @@ export default function EditActivityPage() {
             活动名称 *
             <input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} className="mt-1.5 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="例：2026 XX演唱会北京站" />
           </label>
+          <div className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
+            <div className="font-medium">退票规则</div>
+            <div className="mt-2 grid gap-2 sm:grid-cols-3">
+              <label>全额退款提前天数<input type="number" min={1} value={form.refundFullDaysBefore} onChange={event => setForm({ ...form, refundFullDaysBefore: event.target.value })} className="mt-1 w-full rounded border border-[#ddd] px-2 py-1.5" /></label>
+              <label>折扣退款提前天数<input type="number" min={1} value={form.refundPartialDaysBefore} onChange={event => setForm({ ...form, refundPartialDaysBefore: event.target.value })} className="mt-1 w-full rounded border border-[#ddd] px-2 py-1.5" /></label>
+              <label>折扣退款比例（%）<input type="number" min={1} max={100} value={form.refundPartialRate} onChange={event => setForm({ ...form, refundPartialRate: event.target.value })} className="mt-1 w-full rounded border border-[#ddd] px-2 py-1.5" /></label>
+            </div>
+            <p className="mt-2 text-[12px] text-[#999]">全额退款提前天数必须大于折扣退款提前天数。</p>
+          </div>
 
           <label className="block text-[13px] font-medium text-[#333]">
             分类 *

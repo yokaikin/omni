@@ -32,7 +32,7 @@ describe('OrderClientService', () => {
   it('creates seat orders through internal endpoint with token', async () => {
     const service = new OrderClientService();
 
-    await service.createOrder({ userId: 2004, sessionId: 7, ticketTypeId: 21, quantity: 1, seatIds: [301], allocateRandom: false });
+    await service.createOrder({ userId: 2004, sessionId: 7, ticketTypeId: 21, quantity: 1, seatIds: [301], attendeeIds: [501], allocateRandom: false });
 
     expect(global.fetch).toHaveBeenCalledWith('http://order.local/api/order/internal/create-with-seats', expect.objectContaining({
       method: 'POST',
@@ -123,48 +123,6 @@ describe('OrderClientService', () => {
     expect(result).toEqual({ id: 9001, orderNo: 'O1', status: 'PENDING', grabRequestId: 'GRAB1' });
   });
 
-  it('creates team orders with locked seat pairs and distinct grab ids', async () => {
-    const service = new OrderClientService();
-
-    await service.createTeamOrderWithLockedSeats({
-      teamId: 1,
-      userId: 100,
-      payerUserId: 100,
-      sessionId: 20,
-      ticketTypeId: 30,
-      quantity: 2,
-      seats: [
-        { sessionSeatId: 501, seatLabel: 'A-1' },
-        { sessionSeatId: 502, seatLabel: 'A-2' },
-      ],
-      teamGrabRequestId: 'TEAM-GRAB-1',
-      grabRequestId: 'GRAB-QUEUED-1',
-      matchedStrategy: 'SAME_BLOCK',
-      authorizedMaxUnitPrice: 880,
-    });
-
-    expect(global.fetch).toHaveBeenCalledWith('http://order.local/api/order/internal/team/create-with-locked-seats', expect.objectContaining({
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': 'internal-token' },
-      body: JSON.stringify({
-        teamId: 1,
-        userId: 100,
-        payerUserId: 100,
-        sessionId: 20,
-        ticketTypeId: 30,
-        quantity: 2,
-        seats: [
-          { sessionSeatId: 501, seatLabel: 'A-1' },
-          { sessionSeatId: 502, seatLabel: 'A-2' },
-        ],
-        teamGrabRequestId: 'TEAM-GRAB-1',
-        grabRequestId: 'GRAB-QUEUED-1',
-        matchedStrategy: 'SAME_BLOCK',
-        authorizedMaxUnitPrice: 880,
-      }),
-    }));
-  });
-
   it('returns null when the grab request id has no order', async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
@@ -228,7 +186,7 @@ describe('OrderClientService', () => {
     delete process.env.INTERNAL_API_TOKEN;
     const service = new OrderClientService();
 
-    await expect(service.createOrder({ userId: 2004, sessionId: 7, ticketTypeId: 21, quantity: 1, seatIds: [], allocateRandom: false }))
+    await expect(service.createOrder({ userId: 2004, sessionId: 7, ticketTypeId: 21, quantity: 1, seatIds: [], attendeeIds: [501], allocateRandom: false }))
       .rejects.toThrow('订单内部接口令牌未配置');
     expect(global.fetch).not.toHaveBeenCalled();
   });

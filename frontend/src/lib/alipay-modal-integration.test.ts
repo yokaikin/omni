@@ -22,7 +22,6 @@ test('payment entry pages request alipay page pay instead of qr precreate', () =
   const pages = [
     '../app/orders/page.tsx',
     '../app/activity/[id]/page.tsx',
-    '../app/teams/[id]/page.tsx',
   ]
 
   for (const page of pages) {

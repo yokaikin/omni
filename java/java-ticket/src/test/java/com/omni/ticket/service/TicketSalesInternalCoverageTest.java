@@ -146,7 +146,7 @@ class TicketSalesInternalCoverageTest {
         TicketType t = new TicketType(); t.setId(id); t.setSessionId(sid); t.setStatus(st); t.setPrice(new BigDecimal(price)); return t;
     }
     static Session sess(Long id, Long aid) {
-        Session s = new Session(); s.setId(id); s.setActivityId(aid); s.setStatus(1); s.setVenueId(50L); return s;
+        Session s = new Session(); s.setId(id); s.setActivityId(aid); s.setStatus(1); s.setVenueId(50L); s.setStartTime(LocalDateTime.now().plusDays(30)); return s;
     }
     static Activity act(Long id, String ps, int st, String name) {
         Activity a = new Activity(); a.setId(id); a.setPublishStatus(ps); a.setStatus(st); a.setName(name); return a;

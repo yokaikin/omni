@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { TicketFinderModalHost } from "@/components/ai/TicketFinderModalHost";
 import { GlobalDialog } from "@/components/GlobalDialog";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { SupportFloatingButton } from "@/components/SupportFloatingButton";
@@ -18,6 +19,7 @@ export default function RootLayout({
     <html lang="zh-CN" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-[#f5f5f5]">
         {children}
+        <TicketFinderModalHost />
         <SupportFloatingButton />
         <MobileBottomNav />
         <GlobalDialog />

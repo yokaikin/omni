@@ -10,6 +10,7 @@ import { canEnterConsole, getDefaultConsolePath } from "@/lib/console-auth";
 import { NotificationBell } from "@/components/NotificationBell";
 import { SafeImage } from "@/components/SafeImage";
 import { addSearchHistory, clearSearchHistory, getSearchHistory, getSearchTrending, listActivities } from "@/lib/api";
+import { requestOpenAiTicketFinder } from "@/lib/ai-ticket-finder-modal";
 import { SEARCH_HISTORY_KEY, addSearchHistoryTerm, getSearchTrendingTagMeta, readSearchHistoryFromStorage, writeSearchHistoryToStorage } from "@/lib/search-experience";
 import type { ActivityVO, SearchTrendingItem, UserRole } from "@/types/api";
 
@@ -446,15 +447,16 @@ export function Header() {
           >
             分类
           </Link>
-          <Link
-            href="/ai/ticket-finder"
-            className={`inline-flex items-center gap-1.5 text-[16px] font-medium transition-colors ${
+          <button
+            type="button"
+            onClick={requestOpenAiTicketFinder}
+            className={`inline-flex items-center gap-1.5 border-none bg-transparent p-0 text-[16px] font-medium transition-colors ${
               pathname.startsWith('/ai/ticket-finder') ? 'text-[#ff1268]' : 'text-[#111] hover:text-[#ff1268]'
             }`}
           >
             <Sparkles className="h-4 w-4" />
             AI 找票
-          </Link>
+          </button>
         </nav>
 
         {/* Spacer */}
@@ -647,14 +649,6 @@ export function Header() {
             </div>
           )}
         </div>
-        <Link
-          href="/ai/ticket-finder"
-          className="hidden h-11 shrink-0 items-center gap-1.5 rounded-2xl border border-[#ffd6e7] bg-[#fff7fa] px-3 text-[13px] font-semibold text-[#e6005c] transition-colors hover:border-[#ff1268] hover:bg-[#fff0f5] lg:inline-flex"
-        >
-          <Sparkles className="h-4 w-4" />
-          AI 找票
-        </Link>
-
         {loggedIn && <NotificationBell />}
 
         {/* User / Login */}
@@ -795,13 +789,14 @@ export function Header() {
             >
               分类
             </Link>
-            <Link
-              href="/ai/ticket-finder"
-              className="inline-flex items-center gap-2 rounded-lg bg-[#fff7fa] px-3 py-2.5 text-[14px] font-semibold text-[#e6005c] hover:bg-[#fff0f5]"
+            <button
+              type="button"
+              onClick={requestOpenAiTicketFinder}
+              className="inline-flex items-center gap-2 rounded-lg border-none bg-[#fff7fa] px-3 py-2.5 text-[14px] font-semibold text-[#e6005c] hover:bg-[#fff0f5]"
             >
               <Sparkles className="h-4 w-4" />
               AI 找票
-            </Link>
+            </button>
           </nav>
         </div>
       )}

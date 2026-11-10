@@ -1,8 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import Link from 'next/link'
-import { ArrowRight, Sparkles } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { CategoryNav } from '@/components/CategoryNav'
 import { Banner, type BannerSlide } from '@/components/Banner'
@@ -176,26 +174,9 @@ export default function HomePage() {
       <div className="relative bg-white pb-6 rounded-b-[40px] shadow-[0_10px_40px_-20px_rgba(0,0,0,0.05)] z-10">
         <CategoryNav categories={navCategories} />
         <Banner slides={HOME_BANNER_SLIDES} />
-        <div className="mx-auto mt-4 max-w-[1200px] px-5">
-          <Link
-            href="/ai/ticket-finder"
-            className="group flex items-center justify-between gap-4 rounded-2xl border border-[#ffd6e7] bg-[#fff8fb] px-4 py-3.5 transition-colors hover:border-[#ff1268] hover:bg-[#fff0f5] sm:px-5"
-          >
-            <span className="flex min-w-0 items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[#ff1268] shadow-sm">
-                <Sparkles className="h-4 w-4" />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-[14px] font-semibold text-[#17191d]">不会搜？直接告诉我你的需求</span>
-                <span className="mt-0.5 block truncate text-[12px] text-[#8a8e97]">AI 智能找票，描述演出、城市和预算即可</span>
-              </span>
-            </span>
-            <ArrowRight className="h-4 w-4 shrink-0 text-[#e6005c] transition-transform group-hover:translate-x-0.5" />
-          </Link>
-        </div>
       </div>
 
-      <main className="flex-1 pb-20 -mt-6 pt-10">
+      <main className="flex-1 pb-20 pt-10">
         {loading ? (
           <section className="py-20">
             <div className="max-w-[1200px] mx-auto px-5">

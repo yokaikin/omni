@@ -22,11 +22,13 @@ describe('WaitlistService', () => {
     const repository = {
       createEntry: jest.fn().mockResolvedValue({ entry, rank: 3 }),
     };
-    const service = new WaitlistService(repository as any);
+    const visibleStock = { getSessionVisibleStock: jest.fn().mockResolvedValue({ ticketTypes: [{ ticketTypeId: 202, visibleStock: 0 }] }) };
+    const service = new WaitlistService(repository as any, undefined, visibleStock as any);
 
     const result = await service.createEntry(2004, { sessionId: 101, ticketTypeId: 202, quantity: 1, attendeeIds: [501] });
 
     expect(repository.createEntry).toHaveBeenCalledWith({ userId: 2004, sessionId: 101, ticketTypeId: 202, quantity: 1, attendeeIds: [501] });
+    expect(visibleStock.getSessionVisibleStock).toHaveBeenCalledWith(101, [202]);
     expect(result).toMatchObject({
       id: 1,
       status: 'WAITING',
@@ -119,7 +121,7 @@ describe('WaitlistService', () => {
     const service = new WaitlistService({ createEntry: jest.fn() } as any);
 
     await expect(service.createEntry(2004, { sessionId: 101, ticketTypeId: 202, quantity: 2, attendeeIds: [501] })).rejects.toMatchObject({
-      message: '实名观演人数必须与候补数量一致',
+      message: '请选择与候补数量一致的实名观演人',
     });
   });
 
@@ -127,11 +129,23 @@ describe('WaitlistService', () => {
     const repository = {
       createEntry: jest.fn().mockRejectedValue({ code: '23505' }),
     };
-    const service = new WaitlistService(repository as any);
+    const visibleStock = { getSessionVisibleStock: jest.fn().mockResolvedValue({ ticketTypes: [{ ticketTypeId: 202, visibleStock: 0 }] }) };
+    const service = new WaitlistService(repository as any, undefined, visibleStock as any);
 
-    await expect(service.createEntry(2004, { sessionId: 101, ticketTypeId: 202, quantity: 1 })).rejects.toMatchObject({
+    await expect(service.createEntry(2004, { sessionId: 101, ticketTypeId: 202, quantity: 1, attendeeIds: [501] })).rejects.toMatchObject({
       message: '已加入该场次票档候补',
     });
+  });
+
+  it('only accepts a waitlist entry after the ticket type is sold out', async () => {
+    const repository = { createEntry: jest.fn() };
+    const visibleStock = { getSessionVisibleStock: jest.fn().mockResolvedValue({ ticketTypes: [{ ticketTypeId: 202, visibleStock: 1 }] }) };
+    const service = new WaitlistService(repository as any, undefined, visibleStock as any);
+
+    await expect(service.createEntry(2004, { sessionId: 101, ticketTypeId: 202, quantity: 1, attendeeIds: [501] })).rejects.toMatchObject({
+      message: '当前票档尚未售罄，暂不能加入候补',
+    });
+    expect(repository.createEntry).not.toHaveBeenCalled();
   });
 
   it('only cancels waiting entries owned by the user', async () => {

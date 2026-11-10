@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$NacosAddr = $(if ($env:SEATA_NACOS_ADDR) { $env:SEATA_NACOS_ADDR } else { "localhost:8848" }),
+    [string]$NacosAddr = $(if ($env:SEATA_NACOS_ADDR) { $env:SEATA_NACOS_ADDR } else { "127.0.0.1:8848" }),
     [string]$ConfigFile = "",
     [string]$Group = $(if ($env:SEATA_CONFIG_GROUP) { $env:SEATA_CONFIG_GROUP } else { "SEATA_GROUP" }),
     [string]$DataId = $(if ($env:SEATA_CONFIG_DATA_ID) { $env:SEATA_CONFIG_DATA_ID } else { "seataServer.properties" }),

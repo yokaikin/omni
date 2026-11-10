@@ -38,6 +38,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -50,6 +52,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class TicketSalesInternalService {
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final String STRICT_CONTIGUOUS = "STRICT_CONTIGUOUS";
     private static final String SAME_BLOCK = "SAME_BLOCK";
     private static final String SAME_TICKET_TYPE = "SAME_TICKET_TYPE";
@@ -241,7 +244,15 @@ public class TicketSalesInternalService {
         List<Long> seatIds = request.getSeatIds();
         if ((seatIds == null || seatIds.isEmpty()) && Boolean.TRUE.equals(request.getAllocateRandom())) {
             int quantity = requirePositiveQuantity(request.getQuantity());
-            seatIds = sessionSeatMapper.selectRandomAvailableSeatIds(request.getSessionId(), request.getTicketTypeId(), quantity);
+            List<SessionSeat> availableSeats = sortSeats(sessionSeatMapper.selectAvailableSeatsForFinder(
+                    request.getSessionId(), request.getTicketTypeId()));
+            List<SessionSeat> allocatedSeats = selectStrictContiguous(availableSeats, quantity);
+            if (allocatedSeats.isEmpty()) {
+                allocatedSeats = availableSeats.size() >= quantity
+                        ? new ArrayList<>(availableSeats.subList(0, quantity))
+                        : Collections.emptyList();
+            }
+            seatIds = allocatedSeats.stream().map(SessionSeat::getId).collect(Collectors.toList());
             if (seatIds == null || seatIds.size() < quantity) {
                 requireSeatlessStandingTicketType(request.getSessionId(), request.getTicketTypeId());
                 int updated = ticketTypeMapper.decreaseRemainStockIfEnough(request.getTicketTypeId(), quantity);
@@ -543,11 +554,17 @@ public class TicketSalesInternalService {
     }
 
     private List<String> seatGroupKeys(SessionSeat seat) {
+        if (StringUtils.hasText(seat.getTicketGroupKey())) {
+            return List.of("ticket-group:" + seat.getTicketGroupKey());
+        }
         if (seat.getSeatBlockId() != null) {
             return List.of("block:" + seat.getSeatBlockId());
         }
         if (seat.getLayoutSectionId() != null) {
             return List.of("section:" + seat.getLayoutSectionId());
+        }
+        if (seat.getAreaId() != null) {
+            return List.of("area:" + seat.getAreaId());
         }
         return Collections.emptyList();
     }
@@ -649,6 +666,13 @@ public class TicketSalesInternalService {
         if (isSessionExplicitlyUnsellable(sessionId)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "当前场次不可售");
         }
+        Session session = sessionMapper.selectById(sessionId);
+        if (session != null && (session.getStartTime() == null
+                || !session.getStartTime().toLocalDate().isAfter(LocalDate.now(BUSINESS_ZONE))
+                || !(session.getEndTime() == null ? session.getStartTime().plusHours(3) : session.getEndTime())
+                        .isAfter(LocalDateTime.now(BUSINESS_ZONE)))) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "演出当天及开始后不可购票");
+        }
     }
 
     private boolean isSessionExplicitlyUnsellable(Long sessionId) {
@@ -669,8 +693,11 @@ public class TicketSalesInternalService {
             response.setTourId(activity.getTourId());
             response.setStationId(activity.getStationId());
             response.setPerUserLimit(activity.getPerUserLimit());
-            response.setRealNameRequired(Boolean.TRUE.equals(activity.getRealNameRequired()));
+            response.setRealNameRequired(true);
             response.setTicketTransferAllowed(!Boolean.FALSE.equals(activity.getTicketTransferAllowed()));
+            response.setRefundFullDaysBefore(activity.getRefundFullDaysBefore() == null ? 30 : activity.getRefundFullDaysBefore());
+            response.setRefundPartialDaysBefore(activity.getRefundPartialDaysBefore() == null ? 7 : activity.getRefundPartialDaysBefore());
+            response.setRefundPartialRate(activity.getRefundPartialRate() == null ? 80 : activity.getRefundPartialRate());
         }
         Venue venue = venueMapper.selectById(session.getVenueId());
         if (venue != null) {

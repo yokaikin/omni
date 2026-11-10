@@ -1,6 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { TeamGrabProcessorService } from '../team-grab/team-grab-processor.service';
 import { GrabAdmissionService } from './grab-admission.service';
 import { GrabQueueService } from './grab-queue.service';
 import { GrabRepository } from './grab.repository';
@@ -71,7 +70,6 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly admissionService: GrabAdmissionService,
     private readonly orderClient: OrderClientService,
     private readonly queueService: GrabQueueService,
-    @Optional() private readonly teamGrabProcessor?: TeamGrabProcessorService,
     @Optional() private readonly stockService?: GrabStockService,
   ) {}
 
@@ -129,8 +127,8 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     let outcome: string = 'FAILED';
     try {
       if (record.requestType === 'TEAM_GRAB') {
-        shouldAck = await this.processTeamGrab(record);
-        outcome = shouldAck ? 'TEAM_GRAB_PROCESSED' : 'TEAM_GRAB_RETRY';
+        await this.repository.updateStatus(record.requestId, GRAB_STATUS.FAILED, '小队抢票功能已下线，请重新选择实名观演人并排队购票');
+        outcome = 'FAILED';
       } else {
         outcome = await this.processAttempts(record, latencyTrace);
         shouldAck = outcome !== 'STALE_LEASE';
@@ -144,11 +142,6 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       if (shouldAck) await latencyTrace.measure('ack', () => this.ackIfQueued(record));
       this.logger.log(latencyTrace.format(record, outcome));
     }
-  }
-
-  private async processTeamGrab(record: GrabRequestRecord): Promise<boolean> {
-    if (!this.teamGrabProcessor) throw new Error('组队抢票处理器未配置');
-    return this.teamGrabProcessor.process(record);
   }
 
   private async processAttempts(record: GrabRequestRecord, latencyTrace: GrabWorkerLatencyTrace): Promise<AttemptOutcome> {

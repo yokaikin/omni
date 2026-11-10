@@ -20,6 +20,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -31,6 +32,7 @@ import java.util.stream.Collectors;
 public class ActivityService {
 
     private static final String PUBLISH_STATUS_PUBLISHED = "published";
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
     private final ActivityMapper activityMapper;
     private final CategoryMapper categoryMapper;
@@ -124,6 +126,9 @@ public class ActivityService {
         }
         wrapper.eq(Activity::getStatus, 1);
         wrapper.eq(Activity::getPublishStatus, PUBLISH_STATUS_PUBLISHED);
+        wrapper.apply("EXISTS (SELECT 1 FROM session s WHERE s.activity_id = activity.id AND s.status = 1 "
+                + "AND COALESCE(s.end_time, s.start_time + INTERVAL '3 hours') "
+                + "> (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai'))");
         wrapper.isNull(Activity::getTourId);
         wrapper.orderByDesc(Activity::getCreateTime);
 
@@ -154,6 +159,11 @@ public class ActivityService {
         LambdaQueryWrapper<Session> sessionWrapper = new LambdaQueryWrapper<>();
         sessionWrapper.in(Session::getActivityId, activityIds).eq(Session::getStatus, 1).orderByAsc(Session::getStartTime);
         List<Session> allSessions = sessionMapper.selectList(sessionWrapper);
+        LocalDateTime now = LocalDateTime.now(BUSINESS_ZONE);
+        allSessions = allSessions.stream()
+                .filter(session -> session.getStartTime() == null
+                        || (session.getEndTime() == null ? session.getStartTime().plusHours(3) : session.getEndTime()).isAfter(now))
+                .collect(Collectors.toList());
         
         // 按活动ID分组场次
         Map<Long, List<Session>> activitySessionMap = allSessions.stream().collect(Collectors.groupingBy(Session::getActivityId));
@@ -189,7 +199,7 @@ public class ActivityService {
             vo.setOrganizerId(activity.getOrganizerId());
             vo.setSeatMapVisibility(activity.getSeatMapVisibility());
             vo.setStatus(activity.getStatus());
-            vo.setRealNameRequired(Boolean.TRUE.equals(activity.getRealNameRequired()));
+            vo.setRealNameRequired(true);
             vo.setTicketTransferAllowed(!Boolean.FALSE.equals(activity.getTicketTransferAllowed()));
 
             Category category = categoryMap.get(activity.getCategoryId());
@@ -442,6 +452,15 @@ public class ActivityService {
                       .eq(Session::getStatus, 1)
                       .orderByAsc(Session::getStartTime);
         List<Session> sessions = sessionMapper.selectList(sessionWrapper);
+        LocalDateTime now = LocalDateTime.now(BUSINESS_ZONE);
+        boolean hasSessions = sessions != null && !sessions.isEmpty();
+        sessions = sessions.stream()
+                .filter(session -> session.getStartTime() == null
+                        || (session.getEndTime() == null ? session.getStartTime().plusHours(3) : session.getEndTime()).isAfter(now))
+                .collect(Collectors.toList());
+        if (hasSessions && sessions.isEmpty()) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "活动已结束");
+        }
 
         List<ActivityDetailVO.SessionDetail> sessionDetails = new ArrayList<>();
         for (Session session : sessions) {

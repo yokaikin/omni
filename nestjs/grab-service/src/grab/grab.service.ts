@@ -196,12 +196,12 @@ export class GrabService {
     if (!Number.isInteger(dto.quantity) || dto.quantity <= 0) throw new BadRequestException('购买数量不正确');
     if (!dto.idempotencyKey?.trim()) throw new BadRequestException('幂等请求标识不能为空');
     if (dto.seatIds && dto.seatIds.length > 0 && dto.seatIds.length !== dto.quantity) throw new BadRequestException('座位数量必须与购买数量一致');
-    if (dto.attendeeIds && dto.attendeeIds.length > 0) {
-      if (dto.attendeeIds.length !== dto.quantity) throw new BadRequestException('实名观演人数必须与购买数量一致');
-      const unique = new Set(dto.attendeeIds);
-      if (unique.size !== dto.attendeeIds.length || dto.attendeeIds.some((id) => !Number.isInteger(id) || id <= 0)) {
-        throw new BadRequestException('实名观演人信息无效');
-      }
+    if (!dto.attendeeIds || dto.attendeeIds.length !== dto.quantity) {
+      throw new BadRequestException('请选择与购票数量一致的实名观演人');
+    }
+    const unique = new Set(dto.attendeeIds);
+    if (unique.size !== dto.attendeeIds.length || dto.attendeeIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+      throw new BadRequestException('实名观演人信息无效');
     }
   }
 

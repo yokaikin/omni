@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, addSupportNote, approveOrganizerApplication, batchOrganizerOnsaleSummary, batchReviewRefunds, claimExceptionTask, closeExceptionTask, closeSupportConversation, createActivityReview, createAlipayQrPay, createOrganizerAdminAccount, createOrganizerOpsFollowUp, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getPlatformOpsSummary, getRbacUserPermissions, getReconciliationBatchDetail, getSeatCraftDraft, getSessionSeatLayout, getSupportConversationContext, getTeamGrabProgress, ignoreReconciliationDifference, joinTeamGrab, listActivities, listAdminActivityEngagements, listAdminActivityQuestions, listAdminActivityReviewReports, listAdminActivityReviews, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listOrganizerApplications, listOrganizerOpsAssignments, listOrganizerOpsFollowUps, listOrganizers, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, manualCheckInTicket, moderateAdminActivityQuestion, moderateAdminActivityReview, moderateAdminActivityReviewReport, notifyActivityBuyers, rejectCloseSupportConversation, rejectOrganizerApplication, removeTeamGrabMember, replyAdminActivityQuestion, reportActivityReview, resolveExceptionTask, resolveReconciliationDifference, revokeOrganizer, searchRbacUsers, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateAdminActivityQuestion, updateAdminActivityReportStatus, updateAdminActivityReviewStatus, updateOrganizerAdminAccount, updateOrganizerOpsAssignment, updateRbacRolePermissions, updateRbacUserPermissionOverrides, updateSupportTags, uploadOrganizerApplicationMaterial } from './api.ts'
+import { ApiError, addSupportNote, approveOrganizerApplication, batchOrganizerOnsaleSummary, batchReviewRefunds, claimExceptionTask, closeExceptionTask, closeSupportConversation, createActivityReview, createAlipayQrPay, createOrganizerAdminAccount, createOrganizerOpsFollowUp, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getPlatformOpsSummary, getRbacUserPermissions, getReconciliationBatchDetail, getSeatCraftDraft, getSessionSeatLayout, getSupportConversationContext, ignoreReconciliationDifference, listActivities, listAdminActivityEngagements, listAdminActivityQuestions, listAdminActivityReviewReports, listAdminActivityReviews, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listOrganizerApplications, listOrganizerOpsAssignments, listOrganizerOpsFollowUps, listOrganizers, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, manualCheckInTicket, moderateAdminActivityQuestion, moderateAdminActivityReview, moderateAdminActivityReviewReport, notifyActivityBuyers, rejectCloseSupportConversation, rejectOrganizerApplication, replyAdminActivityQuestion, reportActivityReview, resolveExceptionTask, resolveReconciliationDifference, revokeOrganizer, searchRbacUsers, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateAdminActivityQuestion, updateAdminActivityReportStatus, updateAdminActivityReviewStatus, updateOrganizerAdminAccount, updateOrganizerOpsAssignment, updateRbacRolePermissions, updateRbacUserPermissionOverrides, updateSupportTags, uploadOrganizerApplicationMaterial } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -1116,78 +1116,6 @@ test('serializes support-seat search filter with the public query alias', async 
   }
 })
 
-test('loads team grab progress through the team-scoped endpoint', async () => {
-  const originalFetch = globalThis.fetch
-  let requestedUrl = ''
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
-    requestedUrl = String(input)
-    return new Response(JSON.stringify({
-      code: 200,
-      message: 'success',
-      data: { requestId: 'GRAB1', status: 'WAITING', queueRank: 3 },
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-  }) as typeof fetch
-
-  try {
-    const result = await getTeamGrabProgress(7, 'GRAB1')
-
-    assert.equal(requestedUrl, '/api/grab/teams/7/requests/GRAB1/progress')
-    assert.equal(result.status, 'WAITING')
-  } finally {
-    globalThis.fetch = originalFetch
-  }
-})
-
-test('joins a team with a normalized invite code in the request body', async () => {
-  const originalFetch = globalThis.fetch
-  let requestedUrl = ''
-  let requestedBody = ''
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    requestedUrl = String(input)
-    requestedBody = String(init?.body ?? '')
-    return new Response(JSON.stringify({
-      code: 200,
-      message: 'success',
-      data: { id: 7, inviteCode: 'TEAM1234', leaderUserId: 100, activityId: 10, sessionId: 20, ticketTypeId: 30, size: 2, strategy: 'SAME_BLOCK', fallbacks: [], status: 'DRAFT' },
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-  }) as typeof fetch
-
-  try {
-    const result = await joinTeamGrab(7, ' team1234 ')
-
-    assert.equal(requestedUrl, '/api/grab/teams/7/join')
-    assert.equal(requestedBody, JSON.stringify({ inviteCode: 'TEAM1234' }))
-    assert.equal(result.id, 7)
-  } finally {
-    globalThis.fetch = originalFetch
-  }
-})
-
-test('removes a team member through the leader endpoint', async () => {
-  const originalFetch = globalThis.fetch
-  let requestedUrl = ''
-  let requestedMethod = ''
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    requestedUrl = String(input)
-    requestedMethod = init?.method ?? 'GET'
-    return new Response(JSON.stringify({
-      code: 200,
-      message: 'success',
-      data: { id: 7, inviteCode: 'TEAM1234', leaderUserId: 100, activityId: 10, sessionId: 20, ticketTypeId: 30, size: 1, strategy: 'SAME_BLOCK', fallbacks: [], status: 'DRAFT' },
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-  }) as typeof fetch
-
-  try {
-    const result = await removeTeamGrabMember(7, 200)
-
-    assert.equal(requestedUrl, '/api/grab/teams/7/members/200')
-    assert.equal(requestedMethod, 'DELETE')
-    assert.equal(result.size, 1)
-  } finally {
-    globalThis.fetch = originalFetch
-  }
-})
-
 test('localizes english API errors before displaying them', async () => {
   const originalFetch = globalThis.fetch
   globalThis.fetch = (async () => {
@@ -1200,7 +1128,7 @@ test('localizes english API errors before displaying them', async () => {
 
   try {
     await assert.rejects(
-      () => createWaitlistEntry({ sessionId: 101, ticketTypeId: 202, quantity: 1 }),
+      () => createWaitlistEntry({ sessionId: 101, ticketTypeId: 202, quantity: 1, attendeeIds: [501] }),
       (error) => error instanceof ApiError && error.message === '当前票档已售罄',
     )
   } finally {

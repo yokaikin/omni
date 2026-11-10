@@ -131,8 +131,13 @@ outputs/
 .claude/
 .worktrees/
 .codex-logs/
+.codex-doc-work/
 .playwright-mcp/
+.playwright-cli/
 artifacts/
+work/
+output/
+runtime-logs/
 
 # 前端包管理缓存
 frontend/.pnpm-store/
@@ -151,3 +156,10 @@ runtime/
 
 # 旧原型归档，不进入生产交付面
 vue-archive/
+
+# Markdown 文档（仓库规则与 GitHub 工具配置除外）
+*.md
+!AGENTS.md
+!CLAUDE.md
+!frontend/.github/
+!frontend/.github/**

@@ -109,6 +109,7 @@ describe('GrabService', () => {
       ticketTypeId: 202,
       quantity: 2,
       seatIds: [302, 301],
+      attendeeIds: [501, 502],
       allocateRandom: false,
       idempotencyKey: 'idem-1',
     });
@@ -126,7 +127,7 @@ describe('GrabService', () => {
       requestedTicketTypes: [{ ticketTypeId: 202, name: 'Ticket 202', maxPrice: 202 }],
       allowAutoDowngrade: false,
       seatIds: [301, 302],
-      attendeeIds: [],
+      attendeeIds: [501, 502],
     }));
     expect(result).toEqual({
       requestId: expect.stringMatching(/^GRAB/),
@@ -215,6 +216,7 @@ describe('GrabService', () => {
     await service.submitRequest(2004, {
       sessionId: 101,
       quantity: 1,
+      attendeeIds: [501],
       allocateRandom: true,
       idempotencyKey: 'idem-single',
       ticketTypePreferences: [{ ticketTypeId: 202, name: 'A', maxPrice: 100 }],
@@ -244,6 +246,7 @@ describe('GrabService', () => {
       sessionId: 101,
       ticketTypeId: 202,
       quantity: 1,
+      attendeeIds: [501],
       allocateRandom: true,
       idempotencyKey: 'idem-db-fail',
     })).rejects.toThrow('database unavailable');
@@ -290,6 +293,7 @@ describe('GrabService', () => {
       quantity: 1,
       allocateRandom: true,
       idempotencyKey: 'idem-canonical',
+      attendeeIds: [501],
       ticketTypePreferences: [
         { ticketTypeId: 202, name: 'client A', maxPrice: 1 },
         { ticketTypeId: 203, name: 'client B', maxPrice: 1 },
@@ -367,6 +371,7 @@ describe('GrabService', () => {
       sessionId: 101,
       ticketTypeId: 202,
       quantity: 1,
+      attendeeIds: [501],
       idempotencyKey: 'idem-1',
     });
 
@@ -423,6 +428,7 @@ describe('GrabService', () => {
       ],
       allowAutoDowngrade: true,
       quantity: 2,
+      attendeeIds: [501, 502],
       allocateRandom: false,
       idempotencyKey: 'new-key',
     });
@@ -433,7 +439,7 @@ describe('GrabService', () => {
       ticketTypeId: 202,
       quantity: 2,
       seatIds: [],
-      attendeeIds: [],
+      attendeeIds: [501, 502],
       allocateRandom: false,
       requestedTicketTypes: [
         { ticketTypeId: 202, name: 'A', maxPrice: 100 },

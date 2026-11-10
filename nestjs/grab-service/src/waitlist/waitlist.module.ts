@@ -3,6 +3,9 @@ import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
 import { OrderClientService } from '../grab/order-client.service';
 import { TicketClientService } from '../grab/ticket-client.service';
+import { VisibleStockService } from '../grab/visible-stock.service';
+import { GrabStockService } from '../grab/grab-stock.service';
+import { RedisService } from '../grab/redis.service';
 import { WaitlistController } from './waitlist.controller';
 import { WaitlistAllocatorService } from './waitlist-allocator.service';
 import { WaitlistMqConsumer } from './waitlist-mq.consumer';
@@ -20,6 +23,9 @@ import { WaitlistService } from './waitlist.service';
     WaitlistNotificationService,
     OrderClientService,
     TicketClientService,
+    VisibleStockService,
+    GrabStockService,
+    RedisService,
     WaitlistMqConsumer,
   ],
 })
