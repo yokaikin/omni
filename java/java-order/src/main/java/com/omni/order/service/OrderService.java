@@ -99,6 +99,9 @@ public class OrderService {
     private final UserInternalClient userInternalClient;
     private final WaitlistMqProducer waitlistProducer;
     private final String internalApiToken;
+
+    @Value("${omni.order.seat-lock-minutes:15}")
+    private long seatLockMinutes = 15;
     private OrderAttendeeMapper orderAttendeeMapper;
     private TicketWalletService ticketWalletService;
 
@@ -213,7 +216,6 @@ public class OrderService {
             TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), null, quantity);
             timing.mark("quote");
             validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
-            validatePerUserLimit(request.getUserId(), quote, quantity);
             timing.mark("limit");
             List<ResolvedAttendeeResponse> attendees = resolveOrderAttendees(request.getUserId(), request.getAttendeeIds(), quote, quantity);
             timing.mark("attendee");
@@ -304,7 +306,6 @@ public class OrderService {
             TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), quantity);
             timing.mark("quote");
             validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
-            validatePerUserLimit(request.getUserId(), quote, quantity);
             timing.mark("limit");
             List<ResolvedAttendeeResponse> attendees = resolveOrderAttendees(request.getUserId(), request.getAttendeeIds(), quote, quantity);
             timing.mark("attendee");
@@ -314,7 +315,7 @@ public class OrderService {
             lockRequest.setTicketTypeId(request.getTicketTypeId());
             lockRequest.setSeatIds(request.getSeatIds());
             lockRequest.setQuantity(quantity);
-            lockRequest.setLockExpireTime(LocalDateTime.now().plusMinutes(15));
+            lockRequest.setLockExpireTime(LocalDateTime.now().plusMinutes(seatLockMinutes));
             lockRequest.setAllocateRandom(!hasSeatIds);
             TicketSalesSeatLockResponse lockResponse = lockSeats(lockRequest);
             timing.mark("lockSeats");
@@ -352,7 +353,7 @@ public class OrderService {
             List<Long> orderSeatIds = new ArrayList<>();
             if (lockedSeatIds != null && !lockedSeatIds.isEmpty() && orderSeatMapper != null) {
                 LocalDateTime now = LocalDateTime.now();
-                LocalDateTime expireTime = now.plusMinutes(15);
+                LocalDateTime expireTime = now.plusMinutes(seatLockMinutes);
                 for (Long seatId : lockedSeatIds) {
                     OrderSeat orderSeat = new OrderSeat();
                     orderSeat.setOrderId(order.getId());
@@ -412,7 +413,6 @@ public class OrderService {
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), payload.seatIds, payload.quantity);
         validateTeamAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote);
-        validatePerUserLimit(request.getUserId(), quote, payload.quantity);
         validateTeamSeatLock(request, payload);
 
         Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), payload.quantity, quote.getUnitPrice());
@@ -420,7 +420,7 @@ public class OrderService {
 
         if (orderSeatMapper != null) {
             LocalDateTime now = LocalDateTime.now();
-            LocalDateTime expireTime = now.plusMinutes(15);
+            LocalDateTime expireTime = now.plusMinutes(seatLockMinutes);
             for (Long seatId : payload.seatIds) {
                 OrderSeat orderSeat = new OrderSeat();
                 orderSeat.setOrderId(order.getId());
@@ -849,7 +849,7 @@ public class OrderService {
     private void cancelOrderInternal(Long id, Long userId) {
         Order order = orderMapper.selectById(id);
         if (userId != null && order != null && !userId.equals(order.getUserId())) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "鏃犳潈闄愭搷浣滆璁㈠崟");
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权限操作该订单");
         }
         if (order == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
@@ -880,8 +880,17 @@ public class OrderService {
                 .eq(OrderSeat::getStatus, ORDER_SEAT_LOCKED)
                 .le(OrderSeat::getLockExpireTime, now));
         if (expiredSeats != null && !expiredSeats.isEmpty()) {
+            List<Long> expiredOrderIds = expiredSeats.stream()
+                    .map(OrderSeat::getOrderId)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+            Map<Long, Order> expiredOrderById = expiredOrderIds.isEmpty()
+                    ? Collections.emptyMap()
+                    : orderMapper.selectBatchIds(expiredOrderIds).stream()
+                    .collect(Collectors.toMap(Order::getId, order -> order, (a, b) -> a));
             for (OrderSeat orderSeat : expiredSeats) {
-                Order order = orderMapper.selectById(orderSeat.getOrderId());
+                Order order = expiredOrderById.get(orderSeat.getOrderId());
                 if (order == null) {
                     continue;
                 }
@@ -903,7 +912,7 @@ public class OrderService {
                 }
             }
         }
-        events.addAll(releaseExpiredPendingOrders(now.minusMinutes(15)));
+        events.addAll(releaseExpiredPendingOrders(now.minusMinutes(seatLockMinutes)));
         return events;
     }
 
@@ -1382,22 +1391,6 @@ public class OrderService {
             throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
         }
         return result.getData();
-    }
-
-    private void validatePerUserLimit(Long userId, TicketSalesQuoteResponse quote, int quantity) {
-        Integer limit = quote.getPerUserLimit();
-        if (limit == null) {
-            return;
-        }
-        if (quote.getActivityId() == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "活动限购信息不完整");
-        }
-        orderMapper.acquireAdvisoryTransactionLock("order-limit:" + userId + ":" + quote.getActivityId());
-        Integer existing = orderMapper.sumEffectiveQuantityByUserAndActivity(userId, quote.getActivityId());
-        int effective = existing == null ? 0 : existing;
-        if (effective + quantity > limit) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "超过本活动个人限购数量");
-        }
     }
 
     private List<ResolvedAttendeeResponse> resolveOrderAttendees(Long userId,

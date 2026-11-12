@@ -7,7 +7,6 @@ import {
   canShowWaitlistEntry,
   getPurchaseConfirmCopy,
   getPurchaseQuantityMax,
-  getWaitlistQuantityMax,
   shouldResetGrabIdempotencyForStatus,
 } from './purchase-intent.ts'
 
@@ -104,12 +103,6 @@ test('uses Chinese copy for waitlist confirmation', () => {
     submitLabel: '确认加入候补',
     submittingLabel: '加入中...',
   })
-})
-
-test('limits waitlist quantity by activity purchase limit with a safe fallback', () => {
-  assert.equal(getWaitlistQuantityMax(2), 2)
-  assert.equal(getWaitlistQuantityMax(null), 6)
-  assert.equal(getWaitlistQuantityMax(0), 6)
 })
 
 test('resets grab idempotency after terminal states without an order', () => {

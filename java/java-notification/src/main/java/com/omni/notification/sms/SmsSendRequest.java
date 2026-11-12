@@ -9,6 +9,7 @@ public class SmsSendRequest {
     private Long userId;
     private Long orderId;
     private Long activityId;
+    private String recipientPhone;
     private String templateCode;
     private String content;
     private Map<String, Object> payload;
@@ -23,6 +24,8 @@ public class SmsSendRequest {
     public void setOrderId(Long orderId) { this.orderId = orderId; }
     public Long getActivityId() { return activityId; }
     public void setActivityId(Long activityId) { this.activityId = activityId; }
+    public String getRecipientPhone() { return recipientPhone; }
+    public void setRecipientPhone(String recipientPhone) { this.recipientPhone = recipientPhone; }
     public String getTemplateCode() { return templateCode; }
     public void setTemplateCode(String templateCode) { this.templateCode = templateCode; }
     public String getContent() { return content; }

@@ -184,34 +184,6 @@ export class GrabQueueService {
     );
   }
 
-  async acquireTeamTriggerLock(
-    teamId: number,
-    sessionId: number,
-    ticketTypeId: number,
-    requestId: string,
-    ttlSeconds: number,
-  ): Promise<boolean> {
-    const script = `
-      return redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', tonumber(ARGV[2]))
-    `;
-    const result = await this.redis.eval(
-      script,
-      [this.teamTriggerLockKey(teamId, sessionId, ticketTypeId)],
-      [requestId, String(ttlSeconds)],
-    );
-    return result === 'OK';
-  }
-
-  async releaseTeamTriggerLock(teamId: number, sessionId: number, ticketTypeId: number, requestId: string): Promise<void> {
-    const script = `
-      if redis.call('GET', KEYS[1]) == ARGV[1] then
-        return redis.call('DEL', KEYS[1])
-      end
-      return 0
-    `;
-    await this.redis.eval(script, [this.teamTriggerLockKey(teamId, sessionId, ticketTypeId)], [requestId]);
-  }
-
   async ackOrphanInflight(sessionId: number, requestId: string): Promise<void> {
     const script = `
       local removed = redis.call('LREM', KEYS[1], 1, ARGV[1])
@@ -315,10 +287,6 @@ export class GrabQueueService {
 
   private requestKeyPlaceholder(): string {
     return 'grab:req:';
-  }
-
-  private teamTriggerLockKey(teamId: number, sessionId: number, ticketTypeId: number): string {
-    return `grab:team:${teamId}:${sessionId}:${ticketTypeId}`;
   }
 
   private activeSessionsKey(): string {

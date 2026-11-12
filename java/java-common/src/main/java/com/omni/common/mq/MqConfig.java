@@ -15,15 +15,19 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * RabbitMQ Exchange / Queue / Binding 声明 + JSON 消息转换器
+ * RabbitMQ exchange, queue, binding declarations and JSON converter.
  */
 @Configuration
 @ConditionalOnProperty(prefix = "omni.mq", name = "enabled", havingValue = "true")
 public class MqConfig {
 
-    private static final int RETRY_TTL_MILLIS = 10000;
+    private final MqProperties mqProperties;
 
-    // ── JSON 序列化 ──
+    public MqConfig(MqProperties mqProperties) {
+        this.mqProperties = mqProperties;
+    }
+
+    // JSON serialization
 
     @Bean
     public MessageConverter jackson2JsonMessageConverter() {
@@ -33,7 +37,7 @@ public class MqConfig {
         return new Jackson2JsonMessageConverter(objectMapper);
     }
 
-    // ── Notification ──
+    // Notification
 
     @Bean
     public TopicExchange notificationExchange() {
@@ -68,7 +72,7 @@ public class MqConfig {
     @Bean
     public Queue notificationSendRetryQueue() {
         return QueueBuilder.durable(MqConstants.Q_NOTIFICATION_SEND_RETRY)
-                .withArgument("x-message-ttl", RETRY_TTL_MILLIS)
+                .withArgument("x-message-ttl", mqProperties.getRetryTtlMillis())
                 .withArgument("x-dead-letter-exchange", MqConstants.NOTIFICATION_EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", MqConstants.RK_NOTIFICATION_SEND)
                 .build();
@@ -111,7 +115,7 @@ public class MqConfig {
     @Bean
     public Queue notificationEventRetryQueue() {
         return QueueBuilder.durable(MqConstants.Q_NOTIFICATION_EVENT_RETRY)
-                .withArgument("x-message-ttl", RETRY_TTL_MILLIS)
+                .withArgument("x-message-ttl", mqProperties.getRetryTtlMillis())
                 .withArgument("x-dead-letter-exchange", MqConstants.NOTIFICATION_EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", MqConstants.RK_NOTIFICATION_EVENT)
                 .build();
@@ -136,7 +140,7 @@ public class MqConfig {
                 .with(MqConstants.RK_NOTIFICATION_EVENT_DLQ);
     }
 
-    // ── Waitlist ──
+    // Waitlist
 
     @Bean
     public TopicExchange waitlistExchange() {
@@ -171,7 +175,7 @@ public class MqConfig {
     @Bean
     public Queue waitlistReleasedRetryQueue() {
         return QueueBuilder.durable(MqConstants.Q_WAITLIST_RELEASED_RETRY)
-                .withArgument("x-message-ttl", RETRY_TTL_MILLIS)
+                .withArgument("x-message-ttl", mqProperties.getRetryTtlMillis())
                 .withArgument("x-dead-letter-exchange", MqConstants.WAITLIST_EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", MqConstants.RK_WAITLIST_RELEASED)
                 .build();
@@ -214,7 +218,7 @@ public class MqConfig {
     @Bean
     public Queue waitlistOrderPaidRetryQueue() {
         return QueueBuilder.durable(MqConstants.Q_WAITLIST_ORDER_PAID_RETRY)
-                .withArgument("x-message-ttl", RETRY_TTL_MILLIS)
+                .withArgument("x-message-ttl", mqProperties.getRetryTtlMillis())
                 .withArgument("x-dead-letter-exchange", MqConstants.WAITLIST_EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", MqConstants.RK_WAITLIST_ORDER_PAID)
                 .build();
@@ -239,7 +243,7 @@ public class MqConfig {
                 .with(MqConstants.RK_WAITLIST_ORDER_PAID_DLQ);
     }
 
-    // ── Search index ──
+    // Search index
 
     @Bean
     public TopicExchange searchIndexExchange() {
@@ -274,7 +278,7 @@ public class MqConfig {
     @Bean
     public Queue searchActivityChangedRetryQueue() {
         return QueueBuilder.durable(MqConstants.Q_SEARCH_ACTIVITY_CHANGED_RETRY)
-                .withArgument("x-message-ttl", RETRY_TTL_MILLIS)
+                .withArgument("x-message-ttl", mqProperties.getRetryTtlMillis())
                 .withArgument("x-dead-letter-exchange", MqConstants.SEARCH_INDEX_EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", MqConstants.RK_SEARCH_ACTIVITY_CHANGED)
                 .build();

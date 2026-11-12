@@ -1,4 +1,4 @@
-server:
+﻿server:
   port: 8081
 
 spring:
@@ -10,7 +10,7 @@ spring:
       max-request-size: 3MB
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/omni_ticket
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/omni_user
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:123456}
   cloud:
@@ -32,6 +32,10 @@ spring:
     username: ${RABBITMQ_USER:admin}
     password: ${RABBITMQ_PASSWORD:123456}
     virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
 
 mybatis-plus:
   configuration:
@@ -40,9 +44,32 @@ mybatis-plus:
     db-config:
       id-type: auto
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
 omni:
   mq:
     enabled: true
+  object-storage:
+    provider: ${OMNI_OBJECT_STORAGE_PROVIDER:disabled}
+    minio:
+      endpoint: ${OMNI_OBJECT_STORAGE_ENDPOINT:}
+      public-endpoint: ${OMNI_OBJECT_STORAGE_PUBLIC_ENDPOINT:}
+      access-key: ${OMNI_OBJECT_STORAGE_ACCESS_KEY:}
+      secret-key: ${OMNI_OBJECT_STORAGE_SECRET_KEY:}
+      bucket: ${OMNI_OBJECT_STORAGE_BUCKET:omni-assets}
+  virus-scanner:
+    provider: ${OMNI_VIRUS_SCANNER_PROVIDER:disabled}
+    fail-open: ${OMNI_VIRUS_SCANNER_FAIL_OPEN:false}
+    clamd:
+      host: ${OMNI_CLAMD_HOST:localhost}
+      port: ${OMNI_CLAMD_PORT:3310}
   grab-service:
     url: ${GRAB_SERVICE_URL:http://localhost:3001}
   support:

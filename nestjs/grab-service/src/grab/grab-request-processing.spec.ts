@@ -13,6 +13,7 @@ const LOCKING = 'LOCKING' as any;
 function redis(): any { return { get: jest.fn(), set: jest.fn(), del: jest.fn(), setex: jest.fn(), incr: jest.fn(), decrby: jest.fn(), incrby: jest.fn(), hset: jest.fn(), hget: jest.fn(), rpush: jest.fn(), lpop: jest.fn(), lrem: jest.fn(), lrange: jest.fn(), sadd: jest.fn(), smembers: jest.fn().mockResolvedValue([]), srem: jest.fn(), eval: jest.fn(), exists: jest.fn(), expire: jest.fn() }; }
 function baseRepo(): any { return { findByUserAndIdempotency: jest.fn().mockResolvedValue(null), findActiveByIntent: jest.fn().mockResolvedValue(null), createQueued: jest.fn().mockImplementation((i: any) => Promise.resolve({ requestId: i.requestId, userId: i.userId, sessionId: i.sessionId, ticketTypeId: i.ticketTypeId, quantity: i.quantity, seatIds: i.seatIds, idempotencyKey: i.idempotencyKey, status: QUEUED, progressStatus: QUEUED, orderId: null, failReason: null, queueSeq: i.queueSeq ?? 1 })), findByRequestId: jest.fn(), expireActiveRequest: jest.fn(), updateStatus: jest.fn() }; }
 function authReq(uid: number): any { return { user: { userId: uid } }; }
+function estimator(): any { return { recordProcessingMs: jest.fn(), estimateWaitSeconds: jest.fn().mockReturnValue(null) }; }
 
 // ==================== 3.1 Request Submission (GR-001~006) ====================
 describe('3.1 Request Submission', () => {
@@ -20,38 +21,38 @@ describe('3.1 Request Submission', () => {
     const repo = baseRepo();
     const svc = new GrabService(repo as any, {} as any, {} as any,
       { enqueue: jest.fn().mockResolvedValue({ queueSeq: 5, rank: 4 }), calculateQueueRank: jest.fn() } as any,
-      { listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 202, name: 'T1', price: 100 }]) } as any, {} as any);
+      { listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 202, name: 'T1', price: 100 }]) } as any, {} as any, estimator() as any);
     const ctl = new GrabController(svc);
-    const r = await ctl.submit(authReq(2004), { sessionId: 101, ticketTypeId: 202, quantity: 2, idempotencyKey: 'k1', seatIds: [], attendeeIds: [], allocateRandom: false, allowAutoDowngrade: false, ticketTypePreferences: [{ ticketTypeId: 202 }] } as any);
+    const r = await ctl.submit(authReq(2004), { sessionId: 101, ticketTypeId: 202, quantity: 2, idempotencyKey: 'k1', seatIds: [], attendeeIds: [1, 2], allocateRandom: false, allowAutoDowngrade: false, ticketTypePreferences: [{ ticketTypeId: 202 }] } as any);
     expect(r.code).toBe(200); expect(r.data.status).toBe(QUEUED); expect(r.data.requestId).toBeTruthy();
   });
 
   it('GR-002: idempotent → returns existing', async () => {
     const repo = { ...baseRepo(), findByUserAndIdempotency: jest.fn().mockResolvedValue({ requestId: 'gr-old', status: QUEUED, userId: 2004 }) };
-    const svc = new GrabService(repo as any, {} as any, {} as any, { enqueue: jest.fn() } as any, { listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 202, price: 100 }]) } as any, {} as any);
-    const r = await svc.submitRequest(2004, { sessionId: 101, quantity: 1, idempotencyKey: 'dup', ticketTypePreferences: [{ ticketTypeId: 202 }], seatIds: [], attendeeIds: [] } as any);
+    const svc = new GrabService(repo as any, {} as any, {} as any, { enqueue: jest.fn() } as any, { listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 202, price: 100 }]) } as any, {} as any, estimator() as any);
+    const r = await svc.submitRequest(2004, { sessionId: 101, quantity: 1, idempotencyKey: 'dup', ticketTypePreferences: [{ ticketTypeId: 202 }], seatIds: [], attendeeIds: [1] } as any);
     expect(r.requestId).toBe('gr-old'); expect(repo.createQueued).not.toHaveBeenCalled();
   });
 
   it('GR-003: intent dedup → returns active', async () => {
     const repo = { ...baseRepo(), findActiveByIntent: jest.fn().mockResolvedValue({ requestId: 'gr-active', status: QUEUED }) };
-    const svc = new GrabService(repo as any, {} as any, {} as any, { enqueue: jest.fn() } as any, { listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 202, price: 100 }]) } as any, {} as any);
-    const r = await svc.submitRequest(2004, { sessionId: 101, quantity: 1, idempotencyKey: 'k2', ticketTypePreferences: [{ ticketTypeId: 202 }], seatIds: [], attendeeIds: [] } as any);
+    const svc = new GrabService(repo as any, {} as any, {} as any, { enqueue: jest.fn() } as any, { listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 202, price: 100 }]) } as any, {} as any, estimator() as any);
+    const r = await svc.submitRequest(2004, { sessionId: 101, quantity: 1, idempotencyKey: 'k2', ticketTypePreferences: [{ ticketTypeId: 202 }], seatIds: [], attendeeIds: [1] } as any);
     expect(r.requestId).toBe('gr-active'); expect(repo.createQueued).not.toHaveBeenCalled();
   });
 
   it('GR-004: sessionId null → 400', async () => {
-    const svc = new GrabService(baseRepo() as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+    const svc = new GrabService(baseRepo() as any, {} as any, {} as any, {} as any, {} as any, {} as any, estimator() as any);
     await expect(new GrabController(svc).submit(authReq(2004), { sessionId: null, quantity: 1 } as any)).rejects.toThrow(BadRequestException);
   });
 
   it('GR-005: quantity 0 → 400', async () => {
-    const svc = new GrabService(baseRepo() as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+    const svc = new GrabService(baseRepo() as any, {} as any, {} as any, {} as any, {} as any, {} as any, estimator() as any);
     await expect(new GrabController(svc).submit(authReq(2004), { sessionId: 101, quantity: 0 } as any)).rejects.toThrow(BadRequestException);
   });
 
   it('GR-006: no token → throws', async () => {
-    const svc = new GrabService(baseRepo() as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+    const svc = new GrabService(baseRepo() as any, {} as any, {} as any, {} as any, {} as any, {} as any, estimator() as any);
     await expect(new GrabController(svc).submit(undefined as any, { sessionId: 101, quantity: 1 } as any)).rejects.toThrow();
   });
 });
@@ -83,14 +84,14 @@ describe('3.3 Queue & Worker Processing', () => {
   it('GR-014: auto-downgrade configured when primary SOLD_OUT', async () => {
     const repo = { ...baseRepo(), createQueued: jest.fn().mockResolvedValue({ status: QUEUED }) };
     const tc: any = { listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 1, price: 500 }, { ticketTypeId: 2, price: 200 }]) };
-    const svc = new GrabService(repo as any, {} as any, {} as any, { enqueue: jest.fn().mockResolvedValue({ queueSeq: 1, rank: 0 }) } as any, tc, {} as any);
-    const r = await svc.submitRequest(2004, { sessionId: 101, quantity: 1, idempotencyKey: 'dk', ticketTypePreferences: [{ ticketTypeId: 1 }, { ticketTypeId: 2 }], allowAutoDowngrade: true } as any);
+    const svc = new GrabService(repo as any, {} as any, {} as any, { enqueue: jest.fn().mockResolvedValue({ queueSeq: 1, rank: 0 }) } as any, tc, {} as any, estimator() as any);
+    const r = await svc.submitRequest(2004, { sessionId: 101, quantity: 1, idempotencyKey: 'dk', attendeeIds: [1], ticketTypePreferences: [{ ticketTypeId: 1 }, { ticketTypeId: 2 }], allowAutoDowngrade: true } as any);
     expect(r.status).toBe(QUEUED);
   });
   it('GR-015: downgrade price > primary → rejected', async () => {
     const repo = { findByUserAndIdempotency: jest.fn().mockResolvedValue(null), findActiveByIntent: jest.fn().mockResolvedValue(null), createQueued: jest.fn() };
     const tc: any = { listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 1, price: 100 }, { ticketTypeId: 2, price: 500 }]) };
-    const svc = new GrabService(repo as any, {} as any, {} as any, {} as any, tc, {} as any);
+    const svc = new GrabService(repo as any, {} as any, {} as any, {} as any, tc, {} as any, estimator() as any);
     await expect(svc.submitRequest(2004, { sessionId: 101, quantity: 1, idempotencyKey: 'dk2', ticketTypePreferences: [{ ticketTypeId: 1 }, { ticketTypeId: 2 }], allowAutoDowngrade: true } as any)).rejects.toThrow(BadRequestException);
   });
   it('GR-016~018: error recovery paths', () => { const a: any = { release: jest.fn() }; expect(a.release).toBeDefined(); });
@@ -102,7 +103,7 @@ describe('3.4 Request Query', () => {
 
   it('GR-019: get request → 200', async () => {
     const repo = { ...baseRepo(), findByRequestId: jest.fn().mockResolvedValue(record) };
-    const svc = new GrabService(repo as any, {} as any, {} as any, { calculateQueueRank: jest.fn().mockResolvedValue(3) } as any, {} as any, {} as any);
+    const svc = new GrabService(repo as any, {} as any, {} as any, { calculateQueueRank: jest.fn().mockResolvedValue(3) } as any, {} as any, {} as any, estimator() as any);
     const r = await new GrabController(svc).get(authReq(2004), 'gr-1');
     expect(r.code).toBe(200); expect(r.data.requestId).toBe('gr-1');
   });
@@ -110,7 +111,7 @@ describe('3.4 Request Query', () => {
   it('GR-020: get progress → includes attempts', async () => {
     const repo = { ...baseRepo(), findByRequestId: jest.fn().mockResolvedValue({ ...record, requestedTicketTypes: [{ ticketTypeId: 202, price: 100 }], updatedAt: new Date(), attemptsSnapshot: [] }) };
     const qs: any = { calculateQueueRank: jest.fn().mockResolvedValue(4) };
-    const svc = new GrabService(repo as any, {} as any, {} as any, qs, { listVisibleTicketTypes: jest.fn().mockResolvedValue([]) } as any, {} as any);
+    const svc = new GrabService(repo as any, {} as any, {} as any, qs, { listVisibleTicketTypes: jest.fn().mockResolvedValue([]) } as any, {} as any, estimator() as any);
     const r = await svc.getProgress(2004, 'gr-1');
     expect(r.attempts).toBeDefined();
   });
@@ -124,7 +125,7 @@ describe('3.4 Request Query', () => {
 
   it('GR-022: other user → 403', async () => {
     const repo = { ...baseRepo(), findByRequestId: jest.fn().mockResolvedValue({ requestId: 'gr-1', userId: 2004 }) };
-    const svc = new GrabService(repo as any, {} as any, {} as any, { calculateQueueRank: jest.fn() } as any, {} as any, {} as any);
+    const svc = new GrabService(repo as any, {} as any, {} as any, { calculateQueueRank: jest.fn() } as any, {} as any, {} as any, estimator() as any);
     await expect(new GrabController(svc).get(authReq(9999), 'gr-1')).rejects.toThrow(ForbiddenException);
   });
 });
@@ -133,7 +134,7 @@ describe('3.4 Request Query', () => {
 describe('3.5 Cancel Request', () => {
   it('GR-023: cancel QUEUED → expire', async () => {
     const repo = { ...baseRepo(), findByRequestId: jest.fn().mockResolvedValue({ requestId: 'gr-1', userId: 2004, status: QUEUED, progressStatus: QUEUED, sessionId: 101, ticketTypeId: 202, quantity: 2, seatIds: [], idempotencyKey: 'k1', orderId: null }), expireActiveRequest: jest.fn().mockResolvedValue({ requestId: 'gr-1', status: 'EXPIRED', userId: 2004 }) };
-    const svc = new GrabService(repo as any, {} as any, {} as any, { calculateQueueRank: jest.fn() } as any, {} as any, {} as any);
+    const svc = new GrabService(repo as any, {} as any, {} as any, { calculateQueueRank: jest.fn() } as any, {} as any, {} as any, estimator() as any);
     await svc.cancelRequest(2004, 'gr-1');
     expect(repo.expireActiveRequest).toHaveBeenCalled();
   });
@@ -141,14 +142,14 @@ describe('3.5 Cancel Request', () => {
   it('GR-024: cancel LOCKING → release admission', async () => {
     const admission: any = { admit: jest.fn(), release: jest.fn() };
     const repo = { ...baseRepo(), findByRequestId: jest.fn().mockResolvedValue({ requestId: 'gr-1', userId: 2004, status: 'ACCEPTED', progressStatus: 'LOCKING', sessionId: 101, currentTicketTypeId: 202, quantity: 2, seatIds: [], idempotencyKey: 'k1', orderId: null }), expireActiveRequest: jest.fn().mockResolvedValue({ requestId: 'gr-1', status: 'EXPIRED', userId: 2004 }) };
-    const svc = new GrabService(repo as any, admission, {} as any, { calculateQueueRank: jest.fn() } as any, {} as any, {} as any);
+    const svc = new GrabService(repo as any, admission, {} as any, { calculateQueueRank: jest.fn() } as any, {} as any, {} as any, estimator() as any);
     await svc.cancelRequest(2004, 'gr-1');
     expect(admission.release).toHaveBeenCalled();
   });
 
   it('GR-025: cancel ORDER_CREATED → returns existing (terminal)', async () => {
     const repo = { ...baseRepo(), findByRequestId: jest.fn().mockResolvedValue({ requestId: 'gr-1', userId: 2004, status: ORDER_CREATED, progressStatus: ORDER_CREATED, orderId: 5001 }) };
-    const svc = new GrabService(repo as any, {} as any, {} as any, { calculateQueueRank: jest.fn() } as any, {} as any, {} as any);
+    const svc = new GrabService(repo as any, {} as any, {} as any, { calculateQueueRank: jest.fn() } as any, {} as any, {} as any, estimator() as any);
     const r = await svc.cancelRequest(2004, 'gr-1');
     expect(r.status).toBe(ORDER_CREATED); // terminal status returns existing
     expect(repo.expireActiveRequest).not.toHaveBeenCalled();

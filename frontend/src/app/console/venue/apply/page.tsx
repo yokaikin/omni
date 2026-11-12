@@ -147,15 +147,19 @@ export default function VenueApplyPage() {
         ticketGroups: layoutDraft.ticketGroups ?? [],
       } : undefined
 
+      const materialPayloads: import('@/types/api').VenueApplicationMaterialPayload[] = []
+      if (fireAsset) {
+        materialPayloads.push({ materialType: 'FIRE_SAFETY_PERMIT', assetId: fireAsset.id, validFrom: form.validFrom, validTo: form.validTo })
+      }
+      if (leaseAsset) {
+        materialPayloads.push({ materialType: 'VENUE_LEASE_AGREEMENT', assetId: leaseAsset.id, validFrom: form.validFrom, validTo: form.validTo })
+      }
       await submitVenueApplication({
         ...form,
         capacity: form.capacity ? Number(form.capacity) : null,
         proofFileUrl: null,
         proofAssetId: proofAsset?.id ?? null,
-        materials: [
-          fireAsset ? { materialType: 'FIRE_SAFETY_PERMIT', assetId: fireAsset.id, validFrom: form.validFrom, validTo: form.validTo } : null,
-          leaseAsset ? { materialType: 'VENUE_LEASE_AGREEMENT', assetId: leaseAsset.id, validFrom: form.validFrom, validTo: form.validTo } : null,
-        ].filter(Boolean),
+        materials: materialPayloads,
         layout: layoutPayload,
       })
       setMessage('场馆审核资料已提交，等待平台审核')

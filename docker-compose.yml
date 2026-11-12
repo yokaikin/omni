@@ -128,6 +128,29 @@ services:
       timeout: 5s
       retries: 30
 
+  object-storage:
+    # S3 兼容对象存储（生产可替换为 MinIO/OSS，客户端 SDK 与配置完全兼容）
+    image: andrewgaul/s3proxy:latest
+    container_name: omni-object-storage
+    environment:
+      S3PROXY_ENDPOINT: http://0.0.0.0:9000
+      S3PROXY_AUTHORIZATION: aws-v2-or-v4
+      S3PROXY_IDENTITY: ${OMNI_OBJECT_STORAGE_ACCESS_KEY:-omni}
+      S3PROXY_CREDENTIAL: ${OMNI_OBJECT_STORAGE_SECRET_KEY:-omni-object-storage-secret}
+      JCLOUDS_PROVIDER: filesystem
+      JCLOUDS_FILESYSTEM_BASEDIR: /data
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - ./runtime/object-storage:/data
+    restart: unless-stopped
+
+  clamav:
+    image: clamav/clamav:latest
+    container_name: omni-clamav
+    restart: unless-stopped
+
+
   java-gateway:
     build:
       context: .
@@ -148,7 +171,7 @@ services:
     ports:
       - "127.0.0.1:8088:8088"
     volumes:
-      - omni-uploads:/app/uploads
+      - ./runtime/uploads:/app/uploads
     restart: unless-stopped
 
   java-user:
@@ -163,6 +186,19 @@ services:
       <<: *java-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/omni_user
       GRAB_SERVICE_URL: http://grab-service:3001
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SEATA_ADVERTISE_HOST: seata-server
+      SEATA_ADVERTISE_PORT: 8091
+      OMNI_OBJECT_STORAGE_PROVIDER: ${OMNI_OBJECT_STORAGE_PROVIDER:-minio}
+      OMNI_OBJECT_STORAGE_ENDPOINT: ${OMNI_OBJECT_STORAGE_ENDPOINT:-http://object-storage:9000}
+      OMNI_OBJECT_STORAGE_PUBLIC_ENDPOINT: ${OMNI_OBJECT_STORAGE_PUBLIC_ENDPOINT:-http://localhost:9000}
+      OMNI_OBJECT_STORAGE_ACCESS_KEY: ${OMNI_OBJECT_STORAGE_ACCESS_KEY:-omni}
+      OMNI_OBJECT_STORAGE_SECRET_KEY: ${OMNI_OBJECT_STORAGE_SECRET_KEY:-omni-object-storage-secret}
+      OMNI_OBJECT_STORAGE_BUCKET: ${OMNI_OBJECT_STORAGE_BUCKET:-omni-assets}
+      OMNI_VIRUS_SCANNER_PROVIDER: ${OMNI_VIRUS_SCANNER_PROVIDER:-clamd}
+      OMNI_CLAMD_HOST: ${OMNI_CLAMD_HOST:-clamav}
+      OMNI_CLAMD_PORT: ${OMNI_CLAMD_PORT:-3310}
     depends_on:
       nacos:
         condition: service_healthy
@@ -171,7 +207,7 @@ services:
     ports:
       - "127.0.0.1:8081:8081"
     volumes:
-      - omni-uploads:/app/uploads
+      - ./runtime/uploads:/app/uploads
     restart: unless-stopped
 
   java-ticket:
@@ -189,6 +225,18 @@ services:
       SPRING_ELASTICSEARCH_URIS: http://elasticsearch:9200
       OMNI_SEARCH_PROVIDER: elasticsearch
       OMNI_SEARCH_REQUIRE_ELASTICSEARCH: "true"
+      OMNI_OBJECT_STORAGE_PROVIDER: ${OMNI_OBJECT_STORAGE_PROVIDER:-minio}
+      OMNI_OBJECT_STORAGE_ENDPOINT: ${OMNI_OBJECT_STORAGE_ENDPOINT:-http://object-storage:9000}
+      OMNI_OBJECT_STORAGE_PUBLIC_ENDPOINT: ${OMNI_OBJECT_STORAGE_PUBLIC_ENDPOINT:-http://localhost:9000}
+      OMNI_OBJECT_STORAGE_ACCESS_KEY: ${OMNI_OBJECT_STORAGE_ACCESS_KEY:-omni}
+      OMNI_OBJECT_STORAGE_SECRET_KEY: ${OMNI_OBJECT_STORAGE_SECRET_KEY:-omni-object-storage-secret}
+      OMNI_OBJECT_STORAGE_BUCKET: ${OMNI_OBJECT_STORAGE_BUCKET:-omni-assets}
+      OMNI_VIRUS_SCANNER_PROVIDER: ${OMNI_VIRUS_SCANNER_PROVIDER:-clamd}
+      OMNI_CLAMD_HOST: ${OMNI_CLAMD_HOST:-clamav}
+      OMNI_CLAMD_PORT: ${OMNI_CLAMD_PORT:-3310}
+      OMNI_PRIVATE_ASSET_ROOT: /app/private-uploads
+      # Docker 模式下 AI 模型走宿主机 Ollama；未启动时 AI Finder 优雅失败
+      OMNI_TICKET_AI_ENDPOINT: ${OMNI_TICKET_AI_ENDPOINT:-http://host.docker.internal:11434/api/chat}
     depends_on:
       nacos:
         condition: service_healthy
@@ -201,7 +249,8 @@ services:
     ports:
       - "127.0.0.1:8082:8082"
     volumes:
-      - omni-uploads:/app/uploads
+      - ./runtime/uploads:/app/uploads
+      - ./runtime/private-uploads:/app/private-uploads
     restart: unless-stopped
 
   java-order:
@@ -225,7 +274,7 @@ services:
     ports:
       - "127.0.0.1:8083:8083"
     volumes:
-      - omni-uploads:/app/uploads
+      - ./runtime/uploads:/app/uploads
     restart: unless-stopped
 
   java-payment:
@@ -275,7 +324,7 @@ services:
     ports:
       - "127.0.0.1:8085:8085"
     volumes:
-      - omni-uploads:/app/uploads
+      - ./runtime/uploads:/app/uploads
     restart: unless-stopped
 
   grab-service:
@@ -328,6 +377,7 @@ services:
       WATCHPACK_POLLING: "true"
       API_PROXY_TARGET: http://java-gateway:8088
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+      NEXT_PUBLIC_GRAB_WS_URL: ${NEXT_PUBLIC_GRAB_WS_URL:-http://localhost:8088}
     ports:
       - "3000:3000"
     volumes:
@@ -350,4 +400,3 @@ volumes:
   omni-nacos-logs:
   frontend-node-modules:
   grab-node-modules:
-  omni-uploads:

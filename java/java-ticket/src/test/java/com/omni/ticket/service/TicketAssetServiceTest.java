@@ -1,5 +1,8 @@
 package com.omni.ticket.service;
 
+import com.omni.common.storage.AssetStorageService;
+import com.omni.common.storage.DisabledObjectStorageClient;
+import com.omni.common.storage.DisabledVirusScanner;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.AssetUploadResponse;
 import com.omni.ticket.entity.TicketAsset;
@@ -35,7 +38,7 @@ class TicketAssetServiceTest {
             asset.setId(9101L);
             return 1;
         });
-        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true), uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "poster.png",
@@ -60,7 +63,7 @@ class TicketAssetServiceTest {
     @Test
     void uploadRejectsVenueProofBizType() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
-        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true), uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "proof.png",
@@ -78,7 +81,7 @@ class TicketAssetServiceTest {
     @Test
     void uploadRejectsUnsupportedBizType() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
-        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true), uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "poster.png",
@@ -96,7 +99,7 @@ class TicketAssetServiceTest {
     @Test
     void uploadRejectsInvalidFileType() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
-        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true), uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "poster.txt",
@@ -114,7 +117,7 @@ class TicketAssetServiceTest {
     @Test
     void uploadRejectsForgedImageMimeContent() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
-        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true), uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "poster.png",
@@ -132,7 +135,7 @@ class TicketAssetServiceTest {
     @Test
     void uploadRejectsForgedPdfMimeContent() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
-        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true), uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "proof.pdf",
@@ -150,7 +153,7 @@ class TicketAssetServiceTest {
     @Test
     void uploadRejectsPdfForPosterBizType() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
-        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true), uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "poster.pdf",
@@ -168,7 +171,7 @@ class TicketAssetServiceTest {
     @Test
     void uploadRejectsPdfForVenueProofBizType() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
-        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true), uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "proof.pdf",
@@ -187,7 +190,7 @@ class TicketAssetServiceTest {
     void uploadDeletesStoredFileWhenDatabaseInsertFails() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
         when(ticketAssetMapper.insert(any(TicketAsset.class))).thenThrow(new RuntimeException("db down"));
-        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true), uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "poster.gif",

@@ -22,6 +22,7 @@ import {
 } from '@/lib/api'
 import { logout } from '@/lib/auth'
 import { canUseConsoleAction } from '@/lib/console-auth'
+import { openSupportStream } from '@/lib/support-stream'
 import { appendQuickReply, buildCloseRequestMessage, canClaimSupportConversation, canEditSupportConversation, canReplySupportConversation, canRequestSupportClose, formatSupportAuditAction, formatSupportContextSectionCount, formatSupportConversationStatus, formatSupportConversationWriteBlockedMessage, formatSupportMessageSender, formatSupportSlaText, formatSupportTagLabel, getSupportQueueTabs, getSupportTagOptions, hasSupportContextData, mergeSupportConversations, pickLatestSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue, type SupportQueueFilter } from '@/lib/support-tools'
 import type { SupportAccountVO, SupportAuditVO, SupportContextVO, SupportConversationVO, SupportMessageVO, SupportNoteVO, SupportQuickReplyVO } from '@/types/api'
 
@@ -61,6 +62,9 @@ export default function SupportWorkbenchPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [contextLoading, setContextLoading] = useState(false)
   const activeLoadIdRef = useRef(0)
+  const activeRef = useRef<SupportConversationVO | null>(null)
+  activeRef.current = active
+  const [polling, setPolling] = useState(false)
 
   const loadConversations = async () => {
     const [pending, inProgress, overdue, closeRequested, closed] = await Promise.all([
@@ -218,8 +222,26 @@ export default function SupportWorkbenchPage() {
       })
   }, [active?.id])
 
+  // SSE 推送优先：会话/消息事件到达时定向刷新；连续重连失败后降级为 3s 轮询。
   useEffect(() => {
-    if (checking) return
+    if (checking || polling) return
+
+    const dispose = openSupportStream('agent', {
+      onEvent: event => {
+        void loadConversations().catch(() => undefined)
+        const current = activeRef.current
+        if (current && event.conversationId === current.id) {
+          const loadId = activeLoadIdRef.current
+          void loadMessages(current.id, loadId).catch(() => undefined)
+        }
+      },
+      onFallback: () => setPolling(true),
+    })
+    return dispose
+  }, [checking, polling])
+
+  useEffect(() => {
+    if (checking || !polling) return
 
     let cancelled = false
     const poll = async () => {
@@ -234,12 +256,13 @@ export default function SupportWorkbenchPage() {
       }
     }
 
+    poll()
     const timer = window.setInterval(poll, 3000)
     return () => {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [checking, active?.id, active?.status])
+  }, [checking, polling, active?.id, active?.status])
 
   useEffect(() => {
     if (visibleConversations.length === 0) {

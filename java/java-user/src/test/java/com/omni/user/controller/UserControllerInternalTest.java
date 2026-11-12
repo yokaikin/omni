@@ -68,6 +68,30 @@ class UserControllerInternalTest {
     }
 
     @Test
+    void internalUserContactRejectsMissingToken() {
+        var result = controller.getInternalUserContact(2004L, null);
+
+        assertEquals(403, result.getCode());
+        verify(userService, never()).getInternalUserContact(2004L);
+    }
+
+    @Test
+    void internalUserContactReturnsContactWhenTokenMatches() {
+        com.omni.user.dto.InternalUserContactResponse contact = new com.omni.user.dto.InternalUserContactResponse();
+        contact.setUserId(2004L);
+        contact.setPhone("13800001111");
+        contact.setEmail("user@example.com");
+        when(userService.getInternalUserContact(2004L)).thenReturn(contact);
+
+        var result = controller.getInternalUserContact(2004L, "internal-token");
+
+        assertEquals(200, result.getCode());
+        assertEquals(2004L, result.getData().getUserId());
+        assertEquals("13800001111", result.getData().getPhone());
+        assertEquals("user@example.com", result.getData().getEmail());
+    }
+
+    @Test
     void springUsesConstructorWithInternalTokenValue() {
         Constructor<?> constructor = Assertions.assertDoesNotThrow(() -> UserController.class.getConstructor(
                 UserService.class,

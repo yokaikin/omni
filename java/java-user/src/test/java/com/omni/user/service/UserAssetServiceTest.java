@@ -1,5 +1,8 @@
 package com.omni.user.service;
 
+import com.omni.common.storage.AssetStorageService;
+import com.omni.common.storage.DisabledObjectStorageClient;
+import com.omni.common.storage.DisabledVirusScanner;
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.UserInfoResponse;
 import com.omni.user.entity.User;
@@ -29,6 +32,8 @@ class UserAssetServiceTest {
 
     private final UserAssetMapper userAssetMapper = mock(UserAssetMapper.class);
     private final UserMapper userMapper = mock(UserMapper.class);
+    private final AssetStorageService assetStorageService =
+            new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true);
 
     @Test
     void uploadAvatarStoresImageAndUpdatesUserAvatar() throws Exception {
@@ -41,7 +46,7 @@ class UserAssetServiceTest {
             return 1;
         });
 
-        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, uploadRoot.toString());
+        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, assetStorageService, uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "avatar.png",
@@ -63,7 +68,7 @@ class UserAssetServiceTest {
     @Test
     void uploadAvatarRejectsNonImageFile() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-user-avatar-test");
-        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, uploadRoot.toString());
+        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, assetStorageService, uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "avatar.txt",
@@ -81,7 +86,7 @@ class UserAssetServiceTest {
     @Test
     void uploadAvatarRejectsFileLargerThanTwoMb() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-user-avatar-test");
-        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, uploadRoot.toString());
+        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, assetStorageService, uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "avatar.jpg",
@@ -99,7 +104,7 @@ class UserAssetServiceTest {
     @Test
     void uploadAvatarRejectsForgedImageContentType() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-user-avatar-test");
-        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, uploadRoot.toString());
+        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, assetStorageService, uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "avatar.png",
@@ -115,13 +120,46 @@ class UserAssetServiceTest {
     }
 
     @Test
+    void uploadAvatarRejectsFileThatFailsVirusScan() throws Exception {
+        Path uploadRoot = Files.createTempDirectory("omni-user-avatar-test");
+        AssetStorageService infectedStorage = new AssetStorageService(
+                new DisabledObjectStorageClient(),
+                new com.omni.common.storage.VirusScanner() {
+                    @Override
+                    public com.omni.common.storage.VirusScanResult scan(byte[] content, String filename) {
+                        return com.omni.common.storage.VirusScanResult.infected("EICAR-Test-File");
+                    }
+
+                    @Override
+                    public boolean isEnabled() {
+                        return true;
+                    }
+                },
+                true);
+        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, infectedStorage, uploadRoot.toString());
+        User user = userWithAvatar(null);
+        when(userMapper.selectById(USER_ID)).thenReturn(user);
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "avatar.png",
+                "image/png",
+                new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4}
+        );
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.uploadAvatar(USER_ID, file));
+
+        assertEquals("文件未通过病毒扫描，上传已拒绝", exception.getMessage());
+        verifyNoInteractions(userAssetMapper);
+    }
+
+    @Test
     void uploadAvatarDeletesStoredFileWhenDatabaseInsertFails() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-user-avatar-test");
         User user = userWithAvatar(null);
         when(userMapper.selectById(USER_ID)).thenReturn(user);
         when(userAssetMapper.insert(any(UserAsset.class))).thenThrow(new RuntimeException("db down"));
 
-        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, uploadRoot.toString());
+        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, assetStorageService, uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "avatar.gif",

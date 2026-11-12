@@ -12,7 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MqConfigTest {
 
-    private final MqConfig config = new MqConfig();
+    private final MqProperties mqProperties = new MqProperties();
+    private final MqConfig config = new MqConfig(mqProperties);
 
     @Test
     void notificationQueueDeadLettersToRetryQueue() {
@@ -46,7 +47,7 @@ class MqConfigTest {
     void notificationEventRetryQueueReturnsToMainExchangeAfterDelay() {
         Queue queue = config.notificationEventRetryQueue();
 
-        assertEquals(10000, queue.getArguments().get("x-message-ttl"));
+        assertEquals(10000L, queue.getArguments().get("x-message-ttl"));
         assertEquals(MqConstants.NOTIFICATION_EXCHANGE, queue.getArguments().get("x-dead-letter-exchange"));
         assertEquals(MqConstants.RK_NOTIFICATION_EVENT, queue.getArguments().get("x-dead-letter-routing-key"));
     }
@@ -63,7 +64,7 @@ class MqConfigTest {
     void waitlistReleasedRetryQueueReturnsToMainExchangeAfterDelay() {
         Queue queue = config.waitlistReleasedRetryQueue();
 
-        assertEquals(10000, queue.getArguments().get("x-message-ttl"));
+        assertEquals(10000L, queue.getArguments().get("x-message-ttl"));
         assertEquals(MqConstants.WAITLIST_EXCHANGE, queue.getArguments().get("x-dead-letter-exchange"));
         assertEquals(MqConstants.RK_WAITLIST_RELEASED, queue.getArguments().get("x-dead-letter-routing-key"));
     }
@@ -102,7 +103,7 @@ class MqConfigTest {
     void searchActivityChangedRetryQueueReturnsToMainExchangeAfterDelay() {
         Queue queue = config.searchActivityChangedRetryQueue();
 
-        assertEquals(10000, queue.getArguments().get("x-message-ttl"));
+        assertEquals(10000L, queue.getArguments().get("x-message-ttl"));
         assertEquals(MqConstants.SEARCH_INDEX_EXCHANGE, queue.getArguments().get("x-dead-letter-exchange"));
         assertEquals(MqConstants.RK_SEARCH_ACTIVITY_CHANGED, queue.getArguments().get("x-dead-letter-routing-key"));
     }

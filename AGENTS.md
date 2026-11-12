@@ -68,11 +68,7 @@ Docker 中间件模式：
 powershell -ExecutionPolicy Bypass -File start-project.ps1 -UseDockerInfra
 ```
 
-当前 `scripts/start-infra.ps1` 只检查本机 PostgreSQL 并启动 Docker Redis、Nacos；不会启动 PostgreSQL 容器，也不会启动 RabbitMQ。需要 RabbitMQ 时运行：
-
-```powershell
-docker compose up -d rabbitmq
-```
+当前 `scripts/start-infra.ps1` 只检查本机 PostgreSQL 并按需启动 Docker Redis、Nacos、RabbitMQ、Elasticsearch（已运行的服务会跳过）；不会启动 PostgreSQL 容器。
 
 Seata：
 
@@ -96,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File scripts\start-seata-docker.ps1
 ## 前端约定
 
 - 使用 `src/lib/api.ts` 的 `request<T>()` 统一请求封装。
-- 认证状态在 `src/lib/auth.ts` 管理，token key 为 `damai_token`，user key 为 `damai_user`。
+- 认证状态在 `src/lib/auth.ts` 管理，token key 为 `omni_token`，user key 为 `omni_user`。
 - 登录、订单、支付、抢票页不允许 mock/offline 降级；后端不可用时直接显示失败。
 - B 端 `console/*` 页面使用 `ConsoleLayout` 侧边栏布局。
 - 品牌色：`#ff1268`。

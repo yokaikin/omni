@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { getToken, getUser } from '@/lib/auth'
 import { announceTourCities, deleteTourDraft, deactivateTour, getActivityStation, listAdminActivities, listAdminTours, deleteAdminActivity, updateActivityStatus, deactivateActivity, notifyActivityBuyers, publishStation, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl, listCategories } from '@/lib/api'
 import { getRealNameRequirementLabel, getTicketTransferAllowedLabel } from '@/lib/activity-flags'
@@ -150,6 +151,9 @@ type ActivityActionDialog =
   | { action: 'risk_suspend'; title: string; activity: ActivityEntity; reason: string; error: string }
 
 export default function ActivitiesPage() {
+  const searchParams = useSearchParams()
+  const pathname = usePathname()
+  const historicalView = pathname.endsWith('/history') || searchParams.get('view') === 'history'
   const [activities, setActivities] = useState<ActivityEntity[]>([])
   const [categories, setCategories] = useState<CategoryVO[]>([])
   const [userId, setUserId] = useState(0)
@@ -222,8 +226,9 @@ export default function ActivitiesPage() {
         keyword: activeKeyword,
         status: activeStatus === '' ? undefined : Number(activeStatus),
         categoryId: selectedCategoryId,
+        historical: historicalView,
       }) : Promise.resolve(emptyPage<ActivityEntity>()),
-      canLoadTours ? listAdminTours(u.userId, { page: 1, size: ADMIN_FETCH_SIZE, categoryId: selectedCategoryId }) : Promise.resolve(emptyPage<TourEntity>()),
+      canLoadTours ? listAdminTours(u.userId, { page: 1, size: ADMIN_FETCH_SIZE, categoryId: selectedCategoryId, historical: historicalView }) : Promise.resolve(emptyPage<TourEntity>()),
     ]).then(([activityRes, tourRes]) => {
       const tourActivities: ActivityEntity[] = tourRes.records
         .filter(tour => !activeKeyword.trim() || tour.title.includes(activeKeyword.trim()))
@@ -242,6 +247,9 @@ export default function ActivitiesPage() {
           createTime: tour.createTime || '',
         }))
       const records = [...activityRes.records.map(activity => ({ ...activity, itemType: 'activity' as const })), ...tourActivities]
+        .filter(activity => historicalView
+          ? activity.status === 0 || activity.publishStatus === 'deactivated'
+          : activity.status !== 0 && activity.publishStatus !== 'deactivated')
         .sort(compareActivityRows)
       const nextTotal = records.length
       const nextPages = Math.ceil(nextTotal / PAGE_SIZE) || 1
@@ -266,7 +274,7 @@ export default function ActivitiesPage() {
 
   useEffect(() => {
     listCategories().then(setCategories).catch(() => setCategories([]))
-  }, [])
+  }, [historicalView])
 
   const refreshWhenVisible = () => {
     const now = Date.now()
@@ -278,7 +286,7 @@ export default function ActivitiesPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => loadDataRef.current(), 0)
     return () => window.clearTimeout(timer)
-  }, [])
+  }, [historicalView])
 
   useEffect(() => {
     const handlePageShow = (event: PageTransitionEvent) => {
@@ -563,7 +571,6 @@ export default function ActivitiesPage() {
       await publishStation(detail.station.id, {
         userId,
         scheduleTba: true,
-        perUserLimit: activity.perUserLimit ?? null,
       })
       await globalAlert('活动草稿已发布。若需要具体开演时间，请在活动配置中补齐站点排期并检查 SeatCraft 座位票档。')
       loadData(page)
@@ -739,8 +746,8 @@ export default function ActivitiesPage() {
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-[22px] font-bold text-[#1a1a2e]">{isAdmin ? '活动发布管理' : '我的活动管理'}</h1>
-          <p className="mt-1 text-[13px] text-[#999]">{isAdmin ? '管理平台活动草稿、补齐配置并处理发布状态。' : '维护自己主办的活动草稿、发布申请与后续上下架。'}</p>
+          <h1 className="text-[22px] font-bold text-[#1a1a2e]">{historicalView ? '以往活动' : (isAdmin ? '活动发布管理' : '我的活动管理')}</h1>
+          <p className="mt-1 text-[13px] text-[#999]">{historicalView ? '查看已下架活动的历史信息。' : (isAdmin ? '管理平台活动草稿、补齐配置并处理发布状态。' : '维护自己主办的活动草稿、发布申请与后续上下架。')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {canManageTours && (
@@ -748,9 +755,7 @@ export default function ActivitiesPage() {
               巡演草稿箱
             </Link>
           )}
-          <Link href="/console/activities/new" className="inline-flex h-10 items-center justify-center rounded-lg bg-[#ff1268] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#e6005c]">
-            + 新建演出活动
-          </Link>
+          {!historicalView && <Link href="/console/activities/new" className="inline-flex h-10 items-center justify-center rounded-lg bg-[#ff1268] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#e6005c]">+ 新建演出活动</Link>}
         </div>
       </div>
 
@@ -780,8 +785,8 @@ export default function ActivitiesPage() {
           className="h-10 rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]"
         >
           <option value="">全部状态</option>
-          <option value="1">上架</option>
-          <option value="0">下架</option>
+          {!historicalView && <option value="1">上架</option>}
+          {historicalView && <option value="0">下架</option>}
         </select>
         <button
           type="submit"
@@ -861,7 +866,7 @@ export default function ActivitiesPage() {
                   <input
                     type="checkbox"
                     checked={allBatchSelectableSelected}
-                    disabled={batchSelectableActivities.length === 0}
+                    disabled={historicalView || batchSelectableActivities.length === 0}
                     onChange={(event) => toggleAllBatchSelectable(event.target.checked)}
                     aria-label="选择当前页可批量操作活动"
                     className="h-4 w-4 accent-[#ff1268]"
@@ -888,7 +893,7 @@ export default function ActivitiesPage() {
                     <input
                       type="checkbox"
                       checked={selectedActivityKeys.has(rowKey)}
-                      disabled={!canBatchSelect}
+                      disabled={historicalView || !canBatchSelect}
                       onChange={(event) => toggleActivitySelection(a, event.target.checked)}
                       aria-label={`选择活动 ${a.name || '活动信息待同步'}`}
                       className="h-4 w-4 accent-[#ff1268] disabled:cursor-not-allowed"
@@ -927,17 +932,17 @@ export default function ActivitiesPage() {
                   <td className="whitespace-nowrap p-3 text-[#999]">{a.createTime?.substring(0, 10)}</td>
                   <td className="min-w-[180px] whitespace-nowrap p-3">
                     <div className="flex items-center justify-center gap-2 whitespace-nowrap">
-                      <Link href={configHref} className="rounded px-2 py-1 text-[12px] text-[#3b82f6] hover:bg-[#eff6ff]">继续配置</Link>
-                      <Link href={seatHref} className="rounded px-2 py-1 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]">座位票档</Link>
-                      <div className="relative">
-                        <button
+                      {!historicalView && <Link href={configHref} className="rounded px-2 py-1 text-[12px] text-[#3b82f6] hover:bg-[#eff6ff]">继续配置</Link>}
+                      {!historicalView && <Link href={seatHref} className="rounded px-2 py-1 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]">座位票档</Link>}
+                      {!historicalView && <div className="relative">
+                        {!historicalView && <button
                           type="button"
                           onClick={() => setOpenActionMenuKey(menuOpen ? null : rowKey)}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#666] transition-colors hover:bg-[#f5f5f5] hover:text-[#333]"
                           aria-label={`更多操作 ${a.name || '活动信息待同步'}`}
                         >
                           <MoreHorizontal className="h-4 w-4" />
-                        </button>
+                        </button>}
                         {menuOpen && (
                           <div className="absolute right-0 z-20 mt-2 w-44 rounded-lg border border-[#e5e5e5] bg-white p-1 text-left shadow-lg">
                             {shouldShowSaleStatusControl(a) && (
@@ -1040,7 +1045,7 @@ export default function ActivitiesPage() {
                             </button>
                           </div>
                         )}
-                      </div>
+                      </div>}
                     </div>
                   </td>
                 </tr>

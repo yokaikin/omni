@@ -8,6 +8,7 @@ import type { GrabStatus } from './grab-status';
 import type { GrabProgressResponse, GrabRequestRecord, GrabRequestResponse, GrabTicketPreference, SubmitGrabRequestDto } from './grab.types';
 import { OrderClientService } from './order-client.service';
 import { TicketClientService, TicketTypeVisibleInfo } from './ticket-client.service';
+import { GrabWaitEstimatorService } from './grab-wait-estimator.service';
 import { VisibleStockService } from './visible-stock.service';
 
 const ACTIVE_ASYNC_PROGRESS_STATUS_SET = new Set<string>(ACTIVE_ASYNC_PROGRESS_STATUSES);
@@ -37,6 +38,7 @@ export class GrabService {
     private readonly queueService: GrabQueueService,
     private readonly ticketClient: TicketClientService,
     private readonly visibleStockService: VisibleStockService,
+    private readonly waitEstimator: GrabWaitEstimatorService,
   ) {}
 
   async submitRequest(userId: number, dto: SubmitGrabRequestDto): Promise<GrabRequestResponse> {
@@ -138,7 +140,7 @@ export class GrabService {
       failReason: record.failReason,
       queueSeq: record.queueSeq,
       queueRank,
-      estimatedWaitSeconds: null,
+      estimatedWaitSeconds: this.estimateWaitSeconds(record.sessionId, queueRank),
       currentTicketTypeId: record.currentTicketTypeId,
       currentAttemptIndex: record.currentAttemptIndex,
       requestedTicketTypes: record.requestedTicketTypes,
@@ -297,8 +299,13 @@ export class GrabService {
       failReason: record.failReason,
       queueSeq: record.queueSeq ?? null,
       queueRank: rank,
-      estimatedWaitSeconds: null,
+      estimatedWaitSeconds: this.estimateWaitSeconds(record.sessionId ?? null, rank),
       message: record.progressMessage ?? null,
     };
+  }
+
+  private estimateWaitSeconds(sessionId: number | null, queueRank: number | null): number | null {
+    if (sessionId == null || queueRank == null || queueRank <= 0) return null;
+    return this.waitEstimator.estimateWaitSeconds(sessionId, queueRank);
   }
 }

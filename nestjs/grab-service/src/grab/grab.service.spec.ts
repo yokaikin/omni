@@ -9,6 +9,7 @@ function createService(overrides: {
   queue?: any;
   ticketClient?: any;
   visibleStock?: any;
+  waitEstimator?: any;
 } = {}): GrabService {
   return new GrabService(
     overrides.repository ?? {},
@@ -24,6 +25,7 @@ function createService(overrides: {
       })))),
     },
     overrides.visibleStock ?? { getSessionVisibleStock: jest.fn() },
+    overrides.waitEstimator ?? { recordProcessingMs: jest.fn(), estimateWaitSeconds: jest.fn().mockReturnValue(null) },
   );
 }
 

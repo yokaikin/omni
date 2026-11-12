@@ -157,7 +157,7 @@ function Import-DotEnv {
         return
     }
 
-    Get-Content -LiteralPath $Path | ForEach-Object {
+    Get-Content -LiteralPath $Path -Encoding UTF8 | ForEach-Object {
         $line = $_.Trim()
         if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith("#")) {
             return
@@ -179,6 +179,7 @@ function Import-DotEnv {
 }
 
 Write-Host "`n  Omni Ticket Platform - Startup`n" -ForegroundColor Magenta
+Import-DotEnv -Path (Join-Path $projectRoot ".env.local")
 Import-DotEnv -Path (Join-Path $projectRoot ".env")
 
 $javaUnixDomainTempPath = Join-Path $projectRoot "runtime\java-tmp"
@@ -394,7 +395,8 @@ if (-not $SkipJava) {
             $searchArg = "$searchArg --spring.elasticsearch.username=$env:ELASTICSEARCH_USERNAME --spring.elasticsearch.password=$env:ELASTICSEARCH_PASSWORD"
         }
         $servicePathArg = Quote-PowerShellString $fullPath
-        $defaultRunArguments = "--spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$smsMockArg$searchArg"
+        $sharedDbUrlArg = if ($UseSharedDatabase) { " --spring.datasource.url=jdbc:postgresql://localhost:5432/omni_ticket" } else { "" }
+        $defaultRunArguments = "--spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$sharedDbUrlArg$smsMockArg$searchArg"
         $command = "Set-Location -LiteralPath $servicePathArg; mvn spring-boot:run $(Quote-PowerShellString "-Dspring-boot.run.arguments=$defaultRunArguments")"
         if (-not $UseSharedDatabase -and $svc.Database) {
             $seataArg = if ($svc.Name -in @("java-ticket", "java-order", "java-payment")) { " --seata.enabled=true" } else { "" }

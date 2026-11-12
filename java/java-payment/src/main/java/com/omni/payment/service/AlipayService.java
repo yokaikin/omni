@@ -28,10 +28,12 @@ import com.omni.payment.dto.PaymentStatusResponse;
 import com.omni.payment.dto.QrPayResponse;
 import com.omni.payment.entity.Payment;
 import com.omni.payment.mapper.PaymentMapper;
+import com.omni.payment.util.AlipayLogSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -152,7 +154,7 @@ public class AlipayService {
             throw e;
         } catch (AlipayApiException | RuntimeException e) {
             markPaymentFailed(payment, "生成支付宝支付表单异常");
-            log.error("生成支付宝支付表单失败: orderId={}", orderId, e);
+            log.error("生成支付宝支付表单失败: orderId={}, message={}", orderId, AlipayLogSanitizer.safeMessage(e));
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "生成支付宝支付表单失败");
         }
     }
@@ -213,7 +215,7 @@ public class AlipayService {
             throw e;
         } catch (AlipayApiException | RuntimeException e) {
             markPaymentFailed(payment, "生成支付宝支付二维码异常");
-            log.error("生成支付宝支付二维码失败: orderId={}", orderId, e);
+            log.error("生成支付宝支付二维码失败: orderId={}, message={}", orderId, AlipayLogSanitizer.safeMessage(e));
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "生成支付宝支付二维码失败");
         }
     }
@@ -228,7 +230,7 @@ public class AlipayService {
                 if (attempt >= QRCODE_CREATE_MAX_ATTEMPTS) {
                     throw e;
                 }
-                log.warn("生成支付宝二维码临时失败，准备重试: orderId={}, attempt={}, message={}", orderId, attempt, e.getMessage());
+                log.warn("生成支付宝二维码临时失败，准备重试: orderId={}, attempt={}, message={}", orderId, attempt, AlipayLogSanitizer.safeMessage(e));
             }
         }
         throw lastRuntimeException;
@@ -244,7 +246,7 @@ public class AlipayService {
             try {
                 queryResponse = callAlipayChannel(() -> client.execute(queryRequest));
             } catch (RuntimeException | AlipayApiException e) {
-                log.warn("支付宝二维码已生成，但交易可查询确认失败: outTradeNo={}, attempt={}, message={}", orderNo, attempt, e.getMessage());
+                log.warn("支付宝二维码已生成，但交易可查询确认失败: outTradeNo={}, attempt={}, message={}", orderNo, attempt, AlipayLogSanitizer.safeMessage(e));
                 return;
             }
             if (queryResponse != null && queryResponse.isSuccess()) {
@@ -282,7 +284,7 @@ public class AlipayService {
                 return false;
             }
         } catch (AlipayApiException e) {
-            log.warn("支付宝通知验签异常: outTradeNo={}", params.get("out_trade_no"), e);
+            log.warn("支付宝通知验签异常: outTradeNo={}, message={}", params.get("out_trade_no"), AlipayLogSanitizer.safeMessage(e));
             return false;
         }
 
@@ -424,7 +426,7 @@ public class AlipayService {
             return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中", false);
         } catch (AlipayApiException e) {
             latencyTrace.setOutcome("ALIPAY_QUERY_FAILED");
-            log.warn("查询支付宝支付结果失败: orderId={}, outTradeNo={}", order.getId(), order.getOrderNo(), e);
+            log.warn("查询支付宝支付结果失败: orderId={}, outTradeNo={}, message={}", order.getId(), order.getOrderNo(), AlipayLogSanitizer.safeMessage(e));
             return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中", false);
         } catch (BusinessException e) {
             if ("支付渠道暂不可用，请稍后重试".equals(e.getMessage())) {
@@ -432,7 +434,27 @@ public class AlipayService {
                 return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中", false);
             }
             throw e;
+        } catch (RuntimeException e) {
+            // 支付宝 SDK 内部会把 AlipayApiException 包成 RuntimeException 上抛（消息含完整签名参数），
+            // 与 AlipayApiException 同等降级为"确认中"；其余运行时异常保持原样抛出。
+            if (!isAlipayOriginFailure(e)) {
+                throw e;
+            }
+            latencyTrace.setOutcome("ALIPAY_QUERY_FAILED");
+            log.warn("查询支付宝支付结果异常: orderId={}, outTradeNo={}, message={}", order.getId(), order.getOrderNo(), AlipayLogSanitizer.safeMessage(e));
+            return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中", false);
         }
+    }
+
+    private boolean isAlipayOriginFailure(Throwable error) {
+        Throwable current = error;
+        for (int depth = 0; depth < 5 && current != null; depth++) {
+            if (current instanceof AlipayApiException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private Payment createPendingPayment(OrderInfoResponse order) {
@@ -443,8 +465,18 @@ public class AlipayService {
         payment.setOutTradeNo(order.getOrderNo());
         payment.setAmount(normalizeAmount(order.getAmount()));
         payment.setStatus(PaymentService.STATUS_PENDING);
-        paymentMapper.insert(payment);
-        return payment;
+        try {
+            paymentMapper.insert(payment);
+            return payment;
+        } catch (DuplicateKeyException e) {
+            Payment existing = getLatestPaymentByOutTradeNo(order.getOrderNo());
+            if (existing != null && PaymentService.STATUS_PENDING == existing.getStatus()) {
+                log.warn("并发创建支付流水命中唯一约束，复用已有待支付流水: outTradeNo={}, paymentId={}",
+                        order.getOrderNo(), existing.getId());
+                return existing;
+            }
+            throw e;
+        }
     }
 
     private void markPaymentFailed(Payment payment, String callbackData) {

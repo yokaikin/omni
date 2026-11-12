@@ -14,7 +14,6 @@ const detail = {
     poster: '/seed-posters/activity-08.jpg',
     realNameRequired: true,
     ticketTransferAllowed: false,
-    perUserLimit: 2,
     status: 1,
     createTime: '2026-06-01T00:00:00',
   },

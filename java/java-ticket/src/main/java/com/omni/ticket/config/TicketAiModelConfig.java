@@ -21,8 +21,9 @@ public class TicketAiModelConfig {
             @Value("${omni.ticket.ai.timeout-ms:${OMNI_TICKET_AI_TIMEOUT_MS:30000}}") int timeoutMillis,
             @Value("${omni.ticket.ai.context-window:${OMNI_TICKET_AI_CONTEXT_WINDOW:2048}}") int contextWindow,
             @Value("${omni.ticket.ai.api-key:${OMNI_TICKET_AI_API_KEY:}}") String apiKey,
+            @Value("${omni.ticket.ai.keep-alive:${OMNI_TICKET_AI_KEEP_ALIVE:30m}}") String keepAlive,
             ObjectMapper objectMapper) {
-        return new OllamaAiModelClient(enabled, endpoint, model, timeoutMillis, contextWindow, apiKey, objectMapper);
+        return new OllamaAiModelClient(enabled, endpoint, model, timeoutMillis, contextWindow, apiKey, keepAlive, objectMapper);
     }
 
     @Bean

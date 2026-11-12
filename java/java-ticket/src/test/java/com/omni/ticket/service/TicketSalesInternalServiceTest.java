@@ -298,7 +298,8 @@ class TicketSalesInternalServiceTest {
     void lockSeatsRandomlyAllocatesRealSeatsWhenSeatIdsMissing() {
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
         TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
-        when(sessionSeatMapper.selectRandomAvailableSeatIds(3001L, 4001L, 2)).thenReturn(List.of(601L, 602L));
+        when(sessionSeatMapper.selectAvailableSeatsForFinder(3001L, 4001L))
+                .thenReturn(List.of(seat(601L, 50L, 7001L, 1, 1), seat(602L, 50L, 7001L, 1, 2)));
         when(sessionSeatMapper.lockSeat(eq(601L), eq(3001L), eq(4001L), any())).thenReturn(1);
         when(sessionSeatMapper.lockSeat(eq(602L), eq(3001L), eq(4001L), any())).thenReturn(1);
         when(sessionSeatMapper.selectSeatLabelsByIds(List.of(601L, 602L))).thenReturn(List.of("A区1排1座", "A区1排2座"));
@@ -1050,7 +1051,7 @@ class TicketSalesInternalServiceTest {
         session.setId(3001L);
         session.setActivityId(2001L);
         session.setVenueId(1001L);
-        session.setStartTime(LocalDateTime.of(2026, 6, 22, 19, 30));
+        session.setStartTime(LocalDateTime.now().plusDays(30));
         when(sessionMapper.selectById(3001L)).thenReturn(session);
 
         Activity activity = new Activity();
@@ -1081,7 +1082,7 @@ class TicketSalesInternalServiceTest {
     }
 
     @Test
-    void quoteReturnsPerUserLimitFromActivity() {
+    void quoteDoesNotExposeActivityPurchaseLimit() {
         TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
         SessionMapper sessionMapper = mock(SessionMapper.class);
         ActivityMapper activityMapper = mock(ActivityMapper.class);
@@ -1102,12 +1103,12 @@ class TicketSalesInternalServiceTest {
         Session session = new Session();
         session.setId(2001L);
         session.setActivityId(1001L);
+        session.setStartTime(LocalDateTime.now().plusDays(30));
         when(sessionMapper.selectById(2001L)).thenReturn(session);
 
         Activity activity = new Activity();
         activity.setId(1001L);
         activity.setName("南京站");
-        activity.setPerUserLimit(2);
         when(activityMapper.selectById(1001L)).thenReturn(activity);
 
         TicketSalesQuoteRequest request = new TicketSalesQuoteRequest();
@@ -1117,7 +1118,7 @@ class TicketSalesInternalServiceTest {
 
         TicketSalesQuoteResponse response = service.quote(request);
 
-        assertEquals(2, response.getPerUserLimit());
+        assertEquals(Boolean.TRUE, response.getRealNameRequired());
     }
 
     @Test
@@ -1142,6 +1143,7 @@ class TicketSalesInternalServiceTest {
         Session session = new Session();
         session.setId(2001L);
         session.setActivityId(1001L);
+        session.setStartTime(LocalDateTime.now().plusDays(30));
         when(sessionMapper.selectById(2001L)).thenReturn(session);
 
         Activity activity = new Activity();
@@ -1181,6 +1183,7 @@ class TicketSalesInternalServiceTest {
         Session session = new Session();
         session.setId(2001L);
         session.setActivityId(1001L);
+        session.setStartTime(LocalDateTime.now().plusDays(30));
         when(sessionMapper.selectById(2001L)).thenReturn(session);
 
         Activity activity = new Activity();

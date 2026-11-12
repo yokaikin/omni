@@ -2,8 +2,11 @@ package com.omni.order.service;
 
 import com.omni.common.result.Result;
 import com.omni.order.client.TicketSalesInternalClient;
+import com.omni.order.client.UserInternalClient;
 import com.omni.order.dto.CreateOrderRequest;
+import com.omni.order.dto.InternalUserRefResponse;
 import com.omni.order.dto.LockSeatsRequest;
+import com.omni.order.dto.ResolvedAttendeeResponse;
 import com.omni.order.dto.TicketSalesLockRequest;
 import com.omni.order.dto.TicketSalesQuoteRequest;
 import com.omni.order.dto.TicketSalesQuoteResponse;
@@ -35,15 +38,19 @@ class OrderSnapshotServiceTest {
         OrderSeatMapper orderSeatMapper = mock(OrderSeatMapper.class);
         OrderSnapshotMapper snapshotMapper = mock(OrderSnapshotMapper.class);
         TicketSalesInternalClient ticketClient = mock(TicketSalesInternalClient.class);
-        OrderService service = new OrderService(orderMapper, orderSeatMapper, snapshotMapper, null, ticketClient);
+        UserInternalClient userClient = mock(UserInternalClient.class);
+        OrderService service = new OrderService(orderMapper, orderSeatMapper, snapshotMapper, null, ticketClient, userClient);
         when(ticketClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token"))).thenReturn(Result.success(quote(false)));
         when(ticketClient.lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token"))).thenReturn(Result.success());
+        givenValidUser(userClient, 2004L);
+        givenResolvedAttendees(userClient, 2);
 
         CreateOrderRequest request = new CreateOrderRequest();
         request.setUserId(2004L);
         request.setSessionId(3001L);
         request.setTicketTypeId(4001L);
         request.setQuantity(2);
+        request.setAttendeeIds(List.of(501L, 502L));
 
         Order order = service.createOrder(request);
 
@@ -66,17 +73,21 @@ class OrderSnapshotServiceTest {
         OrderSeatMapper orderSeatMapper = mock(OrderSeatMapper.class);
         OrderSnapshotMapper snapshotMapper = mock(OrderSnapshotMapper.class);
         TicketSalesInternalClient ticketClient = mock(TicketSalesInternalClient.class);
-        OrderService service = new OrderService(orderMapper, orderSeatMapper, snapshotMapper, null, ticketClient);
+        UserInternalClient userClient = mock(UserInternalClient.class);
+        OrderService service = new OrderService(orderMapper, orderSeatMapper, snapshotMapper, null, ticketClient, userClient);
         when(ticketClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token"))).thenReturn(Result.success(quote(true)));
         TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
         lockResponse.setLockedSeatIds(List.of(501L, 502L));
         when(ticketClient.lockSeats(any(TicketSalesLockRequest.class), eq("test-internal-token"))).thenReturn(Result.success(lockResponse));
+        givenValidUser(userClient, 2004L);
+        givenResolvedAttendees(userClient, 2);
 
         LockSeatsRequest request = new LockSeatsRequest();
         request.setUserId(2004L);
         request.setSessionId(3001L);
         request.setTicketTypeId(4001L);
         request.setSeatIds(List.of(501L, 502L));
+        request.setAttendeeIds(List.of(601L, 602L));
 
         service.createOrderWithSeats(request);
 
@@ -84,6 +95,28 @@ class OrderSnapshotServiceTest {
         verify(snapshotMapper).insert(captor.capture());
         assertEquals("A-1, A-2", captor.getValue().getSeatLabels());
         assertEquals(2, captor.getValue().getQuantity());
+    }
+
+    private void givenValidUser(UserInternalClient userClient, Long userId) {
+        InternalUserRefResponse user = new InternalUserRefResponse();
+        user.setId(userId);
+        user.setStatus(1);
+        when(userClient.getUserRef(eq(userId), eq("test-internal-token"))).thenReturn(Result.success(user));
+    }
+
+    private void givenResolvedAttendees(UserInternalClient userClient, int quantity) {
+        List<ResolvedAttendeeResponse> attendees = new java.util.ArrayList<>();
+        for (int index = 0; index < quantity; index++) {
+            ResolvedAttendeeResponse attendee = new ResolvedAttendeeResponse();
+            attendee.setId(501L + index);
+            attendee.setRealName("观演人" + index);
+            attendee.setIdType("ID_CARD");
+            attendee.setIdNoHash("hash-" + index);
+            attendee.setIdNoMask("110***********0" + index);
+            attendee.setIdNoEncrypted("enc-" + index);
+            attendees.add(attendee);
+        }
+        when(userClient.resolveAttendees(any(), eq("test-internal-token"))).thenReturn(Result.success(attendees));
     }
 
     private TicketSalesQuoteResponse quote(boolean withSeats) {

@@ -18,6 +18,7 @@ import {
   startSupportConversation,
 } from '@/lib/api'
 import { getToken, getUser } from '@/lib/auth'
+import { openSupportStream } from '@/lib/support-stream'
 import { buildSupportSubject, canConfirmSupportConversationClose, canEditSupportConversation, canRequestSupportHandoff, formatSupportConversationStatus, formatSupportConversationWriteBlockedMessage, formatSupportHandoffActionLabel, formatSupportMessageSender, isSupportHelpConversationPath, pickDefaultUserSupportConversation, shouldPollSupportConversation } from '@/lib/support-tools'
 import type { HelpFaqVO, SupportConversationVO, SupportMessageVO } from '@/types/api'
 
@@ -42,6 +43,9 @@ export default function HelpPage() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
   const streamingRef = useRef(false)
   const streamingAiMessageIdRef = useRef(-1)
+  const conversationRef = useRef<SupportConversationVO | null>(null)
+  conversationRef.current = conversation
+  const [polling, setPolling] = useState(false)
 
   useEffect(() => {
     const hasToken = Boolean(getToken())
@@ -96,8 +100,24 @@ export default function HelpPage() {
     return next
   }
 
+  // SSE 推送优先：客服/AI 消息事件到达时定向刷新；连续重连失败后降级为 3s 轮询。
   useEffect(() => {
-    if (!inSupportWindow || !conversation || !shouldPollSupportConversation(conversation.status)) return
+    if (!loggedIn || !inSupportWindow || polling) return
+
+    const dispose = openSupportStream('user', {
+      onEvent: event => {
+        if (streamingRef.current) return
+        const current = conversationRef.current
+        if (event.conversationId && current && event.conversationId !== current.id) return
+        loadMyConversation(current?.id ?? null).catch(() => undefined)
+      },
+      onFallback: () => setPolling(true),
+    })
+    return dispose
+  }, [loggedIn, inSupportWindow, polling])
+
+  useEffect(() => {
+    if (!inSupportWindow || !conversation || !polling || !shouldPollSupportConversation(conversation.status)) return
 
     let cancelled = false
     const poll = async () => {
@@ -115,7 +135,7 @@ export default function HelpPage() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [conversation?.id, conversation?.status, inSupportWindow])
+  }, [conversation?.id, conversation?.status, inSupportWindow, polling])
 
   useEffect(() => {
     if (!loggedIn) return

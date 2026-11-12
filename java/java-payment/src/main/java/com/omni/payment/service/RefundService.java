@@ -33,6 +33,7 @@ import com.omni.payment.entity.RefundRequest;
 import com.omni.payment.mapper.PaymentMapper;
 import com.omni.payment.mapper.RefundRequestMapper;
 import com.omni.payment.mq.NotificationMqProducer;
+import com.omni.payment.util.AlipayLogSanitizer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -177,14 +178,11 @@ public class RefundService {
         if (sessionTime == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "订单缺少演出时间，暂时无法计算退票金额");
         }
-        int fullDaysBefore = order.getRefundFullDaysBefore() == null ? 30 : order.getRefundFullDaysBefore();
         int partialDaysBefore = order.getRefundPartialDaysBefore() == null ? 7 : order.getRefundPartialDaysBefore();
-        int partialRate = order.getRefundPartialRate() == null ? 80 : order.getRefundPartialRate();
         if (!now.isBefore(sessionTime.minusDays(partialDaysBefore))) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "开演前" + partialDaysBefore + "天内不可申请退票");
         }
-        BigDecimal refundRate = now.isBefore(sessionTime.minusDays(fullDaysBefore))
-                ? BigDecimal.ONE : BigDecimal.valueOf(partialRate).movePointLeft(2);
+        BigDecimal refundRate = resolveRefundRate(order, now);
         BigDecimal amount = normalizeAmount(options.getUnitPrice())
                 .multiply(BigDecimal.valueOf(refundQuantity))
                 .multiply(refundRate)
@@ -329,7 +327,7 @@ public class RefundService {
             return toVO(getRefundOrThrow(refundId), order);
         }
         validateRefundAmount(refund, order);
-        validatePartialRefundBeforeAlipay(refund, reviewerId, reviewNote);
+        validatePartialRefundBeforeAlipay(refund, order, reviewerId, reviewNote);
 
         LocalDateTime now = LocalDateTime.now();
         if (REFUND_STATUS_PENDING.equals(refund.getStatus())) {
@@ -353,7 +351,7 @@ public class RefundService {
             response = callAlipayChannel(() -> createClient().execute(request));
         } catch (AlipayApiException | RuntimeException e) {
             refund = updateRefundUnknown(refundId, reviewerId, reviewNote,
-                    "支付宝退款异常，退款结果未知，请稍后重试/查询: " + e.getMessage(), now);
+                    "支付宝退款异常，退款结果未知，请稍后重试/查询: " + AlipayLogSanitizer.safeMessage(e), now);
             sendRefundNotificationEvent("REFUND_UNKNOWN", refund, order);
             return toVO(refund, order);
         }
@@ -427,7 +425,7 @@ public class RefundService {
             return directRefundResult(result, DIRECT_REFUND_STATUS_FAILED, false, message);
         } catch (AlipayApiException e) {
             return directRefundResult(result, DIRECT_REFUND_STATUS_UNKNOWN, false,
-                    "支付宝退款异常，退款结果未知，请查询/人工确认: " + e.getMessage());
+                    "支付宝退款异常，退款结果未知，请查询/人工确认: " + AlipayLogSanitizer.safeMessage(e));
         } catch (BusinessException e) {
             if ("支付宝退款结果未知，请稍后重试/查询".equals(e.getMessage())) {
                 return directRefundResult(result, DIRECT_REFUND_STATUS_UNKNOWN, false, e.getMessage());
@@ -923,17 +921,38 @@ public class RefundService {
 
     private void validateRefundAmount(RefundRequest refund, OrderInfoResponse order) {
         normalizeAmount(refund.getAmount());
-        if (!"partial".equals(refund.getRefundType()) && !amountEquals(refund.getAmount(), order.getAmount())) {
+        if ("partial".equals(refund.getRefundType())) {
+            return;
+        }
+        BigDecimal expectedAmount = normalizeAmount(order.getAmount())
+                .multiply(resolveRefundRate(order, rateReferenceTime(refund)))
+                .setScale(2, RoundingMode.HALF_UP);
+        if (!amountEquals(refund.getAmount(), expectedAmount)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "退款金额与订单金额不一致");
         }
     }
 
-    private void validatePartialRefundBeforeAlipay(RefundRequest refund, Long reviewerId, String reviewNote) {
+    private BigDecimal resolveRefundRate(OrderInfoResponse order, LocalDateTime referenceTime) {
+        LocalDateTime sessionTime = order.getSessionTime();
+        if (sessionTime == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "订单缺少演出时间，暂时无法计算退票金额");
+        }
+        int fullDaysBefore = order.getRefundFullDaysBefore() == null ? 30 : order.getRefundFullDaysBefore();
+        int partialRate = order.getRefundPartialRate() == null ? 80 : order.getRefundPartialRate();
+        return referenceTime.isBefore(sessionTime.minusDays(fullDaysBefore))
+                ? BigDecimal.ONE : BigDecimal.valueOf(partialRate).movePointLeft(2);
+    }
+
+    private LocalDateTime rateReferenceTime(RefundRequest refund) {
+        return refund.getCreateTime() != null ? refund.getCreateTime() : LocalDateTime.now(BUSINESS_ZONE);
+    }
+
+    private void validatePartialRefundBeforeAlipay(RefundRequest refund, OrderInfoResponse order, Long reviewerId, String reviewNote) {
         if (!"partial".equals(refund.getRefundType())) {
             return;
         }
         try {
-            validatePartialRefundAgainstOptions(refund, getRefundOptionsOrThrow(refund.getOrderId()), true);
+            validatePartialRefundAgainstOptions(refund, order, getRefundOptionsOrThrow(refund.getOrderId()), true);
         } catch (BusinessException e) {
             markRefundValidationFailed(refund, reviewerId, appendMessage(reviewNote, e.getMessage()), e.getMessage(), LocalDateTime.now());
             throw e;
@@ -948,7 +967,7 @@ public class RefundService {
         markPendingRefundFailed(refund.getId(), reviewerId, reviewNote, rawResponse, now);
     }
 
-    private void validatePartialRefundAgainstOptions(RefundRequest refund, OrderRefundOptionsResponse options, boolean approval) {
+    private void validatePartialRefundAgainstOptions(RefundRequest refund, OrderInfoResponse order, OrderRefundOptionsResponse options, boolean approval) {
         int refundQuantity = valueOrZero(refund.getQuantity());
         int refundableQuantity = valueOrZero(options.getRefundableQuantity());
         if (refundQuantity <= 0 || refundQuantity > refundableQuantity) {
@@ -966,6 +985,7 @@ public class RefundService {
         }
         BigDecimal expectedAmount = normalizeAmount(options.getUnitPrice())
                 .multiply(BigDecimal.valueOf(refundQuantity))
+                .multiply(resolveRefundRate(order, rateReferenceTime(refund)))
                 .setScale(2, RoundingMode.HALF_UP);
         if (!amountEquals(refund.getAmount(), expectedAmount)) {
             throw new BusinessException(ResultCode.BAD_REQUEST,

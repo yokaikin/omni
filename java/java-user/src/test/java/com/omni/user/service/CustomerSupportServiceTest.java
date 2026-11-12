@@ -84,6 +84,7 @@ class CustomerSupportServiceTest {
             userMapper,
             new SupportAiService((question, projectKnowledge) -> java.util.Optional.empty()),
             notificationProducer,
+            new SupportPushService(),
             "internal-token",
             Runnable::run
         );
@@ -277,6 +278,7 @@ class CustomerSupportServiceTest {
                 userMapper,
                 diagnosticAiService,
                 notificationProducer,
+                new SupportPushService(),
                 "internal-token",
                 Runnable::run
         );

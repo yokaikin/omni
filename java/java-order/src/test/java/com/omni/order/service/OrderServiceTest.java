@@ -154,25 +154,6 @@ class OrderServiceTest {
     }
 
     @Test
-    void createOrderRejectsWhenActivityLimitExceeded() {
-        CreateOrderRequest request = new CreateOrderRequest();
-        request.setUserId(2004L);
-        request.setSessionId(10L);
-        request.setTicketTypeId(20L);
-        request.setQuantity(2);
-
-        TicketSalesQuoteResponse quote = quoteWithLimit(2);
-        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
-        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
-        when(orderMapper.sumEffectiveQuantityByUserAndActivity(2004L, 100L)).thenReturn(2);
-
-        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(request));
-
-        assertEquals("超过本活动个人限购数量", ex.getMessage());
-        verify(orderMapper, never()).insert(any(Order.class));
-    }
-
-    @Test
     void createOrderRejectsWhenQuotePriceExceedsAuthorizedMax() {
         CreateOrderRequest request = new CreateOrderRequest();
         request.setUserId(2004L);
@@ -300,6 +281,7 @@ class OrderServiceTest {
         request.setSeatIds(List.of());
         request.setGrabRequestId("WAITLIST-10-abcdef1234567890");
         request.setAuthorizedMaxUnitPrice(null);
+        request.setAttendeeIds(List.of(501L));
 
         TicketSalesQuoteResponse quote = quoteWithoutLimit(1);
         quote.setTicketTypeId(202L);
@@ -309,6 +291,7 @@ class OrderServiceTest {
 
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+        givenResolvedAttendees(1);
         when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             order.setId(9001L);
@@ -950,11 +933,13 @@ class OrderServiceTest {
         request.setQuantity(1);
         request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
         request.setGrabRequestId("GRAB-NEW-NORMAL");
+        request.setAttendeeIds(List.of(501L));
 
         when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NEW-NORMAL")).thenReturn(null);
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(1)));
         when(ticketSalesInternalClient.lockStock(any(), anyString())).thenReturn(Result.success());
+        givenResolvedAttendees(1);
 
         service.createOrder(request);
 
@@ -974,6 +959,7 @@ class OrderServiceTest {
         request.setSeatIds(List.of(301L));
         request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
         request.setGrabRequestId("GRAB-NEW-SEAT-NORMAL");
+        request.setAttendeeIds(List.of(501L));
 
         TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
         lockResponse.setLockedSeatIds(List.of(301L));
@@ -981,6 +967,7 @@ class OrderServiceTest {
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(1)));
         when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+        givenResolvedAttendees(1);
 
         service.createOrderWithSeats(request);
 
@@ -995,10 +982,9 @@ class OrderServiceTest {
     void createTeamOrderUsesLeaderLimitAndDoesNotRelockSeats() {
         CreateTeamOrderRequest request = teamOrderRequest();
 
-        TicketSalesQuoteResponse quote = quoteWithLimit(2);
+        TicketSalesQuoteResponse quote = quoteWithActivity(2);
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
-        when(orderMapper.sumEffectiveQuantityByUserAndActivity(2004L, 100L)).thenReturn(1);
         when(ticketSalesInternalClient.validateTeamSeatLock(any(), anyString())).thenReturn(Result.success(validTeamLock()));
         doAnswer(invocation -> {
             Order order = invocation.getArgument(0);
@@ -1011,8 +997,6 @@ class OrderServiceTest {
         assertEquals(2004L, order.getUserId());
         assertEquals(2, order.getQuantity());
         assertEquals(new BigDecimal("200.00"), order.getAmount());
-        verify(orderMapper).acquireAdvisoryTransactionLock("order-limit:2004:100");
-        verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
         ArgumentCaptor<TicketSalesLockRequest> validationCaptor = ArgumentCaptor.forClass(TicketSalesLockRequest.class);
         verify(ticketSalesInternalClient).validateTeamSeatLock(validationCaptor.capture(), anyString());
         assertEquals("TEAM-GRAB-1", validationCaptor.getValue().getLockRequestId());
@@ -1206,12 +1190,11 @@ class OrderServiceTest {
     }
 
     @Test
-    void createTeamOrderLocksLeaderActivityLimitBeforeLimitCheck() {
+    void createTeamOrderLocksAndLooksUpBeforeQuoteSideEffects() {
         CreateTeamOrderRequest request = teamOrderRequest();
-        TicketSalesQuoteResponse quote = quoteWithLimit(2);
+        TicketSalesQuoteResponse quote = quoteWithActivity(2);
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
-        when(orderMapper.sumEffectiveQuantityByUserAndActivity(2004L, 100L)).thenReturn(1);
         when(ticketSalesInternalClient.validateTeamSeatLock(any(), anyString())).thenReturn(Result.success(validTeamLock()));
 
         service.createTeamOrderWithLockedSeats(request);
@@ -1224,8 +1207,6 @@ class OrderServiceTest {
         inOrder.verify(orderMapper).selectOrderListItemByGrabRequestId("TEAM-GRAB-1");
         inOrder.verify(orderMapper).selectOrderListItemByGrabRequestId("GRAB-LEADER-1");
         inOrder.verify(ticketSalesInternalClient).quote(any(), anyString());
-        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("order-limit:2004:100");
-        inOrder.verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
     }
 
     @Test
@@ -1390,28 +1371,6 @@ class OrderServiceTest {
     }
 
     @Test
-    void createOrderLocksActivityLimitBeforeSummingEffectiveQuantity() {
-        CreateOrderRequest request = new CreateOrderRequest();
-        request.setUserId(2004L);
-        request.setSessionId(10L);
-        request.setTicketTypeId(20L);
-        request.setQuantity(1);
-
-        TicketSalesQuoteResponse quote = quoteWithLimit(1);
-        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
-        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
-        when(orderMapper.sumEffectiveQuantityByUserAndActivity(2004L, 100L)).thenReturn(0);
-        when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), anyString())).thenReturn(Result.success());
-
-        service.createOrder(request);
-
-        InOrder inOrder = inOrder(ticketSalesInternalClient, orderMapper);
-        inOrder.verify(ticketSalesInternalClient).quote(any(), anyString());
-        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("order-limit:2004:100");
-        inOrder.verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
-    }
-
-    @Test
     void createTeamOrderRejectsGrabRequestHitForNonTeamOrder() {
         CreateTeamOrderRequest request = teamOrderRequest();
         when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1")).thenReturn(null);
@@ -1520,6 +1479,7 @@ class OrderServiceTest {
         request.setRequestedTicketTypeId(1L);
         request.setMatchedTicketTypeId(2L);
         request.setAutoDowngraded(true);
+        request.setAttendeeIds(List.of(501L));
 
         TicketSalesQuoteResponse quote = quoteWithoutLimit(1);
         quote.setTicketTypeId(2L);
@@ -1528,6 +1488,7 @@ class OrderServiceTest {
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
         when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), anyString())).thenReturn(Result.success());
+        givenResolvedAttendees(1);
 
         service.createOrder(request);
 
@@ -1573,50 +1534,6 @@ class OrderServiceTest {
     }
 
     @Test
-    void createOrderWithSeatsRejectsWhenActivityLimitExceeded() {
-        LockSeatsRequest request = new LockSeatsRequest();
-        request.setUserId(2004L);
-        request.setSessionId(10L);
-        request.setTicketTypeId(20L);
-        request.setSeatIds(List.of(301L, 302L));
-
-        TicketSalesQuoteResponse quote = quoteWithLimit(2);
-        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
-        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
-        when(orderMapper.sumEffectiveQuantityByUserAndActivity(2004L, 100L)).thenReturn(2);
-
-        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
-
-        assertEquals("超过本活动个人限购数量", ex.getMessage());
-        verify(orderMapper, never()).insert(any(Order.class));
-        verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
-    }
-
-    @Test
-    void createOrderWithSeatsLocksActivityLimitBeforeSummingEffectiveQuantity() {
-        LockSeatsRequest request = new LockSeatsRequest();
-        request.setUserId(2004L);
-        request.setSessionId(10L);
-        request.setTicketTypeId(20L);
-        request.setSeatIds(List.of(301L));
-
-        TicketSalesQuoteResponse quote = quoteWithLimit(1);
-        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
-        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
-        when(orderMapper.sumEffectiveQuantityByUserAndActivity(2004L, 100L)).thenReturn(0);
-        TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
-        lockResponse.setLockedSeatIds(List.of(301L));
-        when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
-
-        service.createOrderWithSeats(request);
-
-        InOrder inOrder = inOrder(ticketSalesInternalClient, orderMapper);
-        inOrder.verify(ticketSalesInternalClient).quote(any(), anyString());
-        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("order-limit:2004:100");
-        inOrder.verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
-    }
-
-    @Test
     void createOrderWithSeatsStoresLockedSeatLabels() {
         LockSeatsRequest request = new LockSeatsRequest();
         request.setUserId(2004L);
@@ -1624,6 +1541,7 @@ class OrderServiceTest {
         request.setTicketTypeId(20L);
         request.setSeatIds(List.of(302L, 301L));
         request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setAttendeeIds(List.of(501L, 502L));
 
         TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
         lockResponse.setLockedSeatIds(List.of(302L, 301L));
@@ -1631,6 +1549,7 @@ class OrderServiceTest {
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
         when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+        givenResolvedAttendees(2);
         doAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             order.setId(83L);
@@ -1657,6 +1576,7 @@ class OrderServiceTest {
         request.setTicketTypeId(20L);
         request.setSeatIds(List.of(301L, 302L));
         request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setAttendeeIds(List.of(501L, 502L));
 
         TicketSalesQuoteResponse quote = quoteWithoutLimit(2);
         quote.setSeatLabels("A-1, A-2");
@@ -1666,6 +1586,7 @@ class OrderServiceTest {
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
         when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+        givenResolvedAttendees(2);
         doAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             order.setId(85L);
@@ -1691,6 +1612,7 @@ class OrderServiceTest {
         request.setTicketTypeId(20L);
         request.setSeatIds(List.of(301L, 302L));
         request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setAttendeeIds(List.of(501L, 502L));
 
         TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
         lockResponse.setLockedSeatIds(List.of(301L, 302L));
@@ -1698,6 +1620,7 @@ class OrderServiceTest {
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
         when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+        givenResolvedAttendees(2);
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
 
@@ -1715,6 +1638,7 @@ class OrderServiceTest {
         request.setTicketTypeId(20L);
         request.setQuantity(2);
         request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setAttendeeIds(List.of(501L, 502L));
 
         TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
         lockResponse.setLockedSeatIds(List.of(301L));
@@ -1722,6 +1646,7 @@ class OrderServiceTest {
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
         when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+        givenResolvedAttendees(2);
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
 
@@ -1739,6 +1664,7 @@ class OrderServiceTest {
         request.setTicketTypeId(20L);
         request.setQuantity(2);
         request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setAttendeeIds(List.of(501L, 502L));
 
         TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
         lockResponse.setLockedSeatIds(List.of(301L, 302L, 303L));
@@ -1746,6 +1672,7 @@ class OrderServiceTest {
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
         when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+        givenResolvedAttendees(2);
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
 
@@ -1763,6 +1690,7 @@ class OrderServiceTest {
         request.setTicketTypeId(20L);
         request.setSeatIds(List.of(301L, 302L));
         request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setAttendeeIds(List.of(501L, 502L));
 
         TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
         lockResponse.setLockedSeatIds(List.of(301L, 303L));
@@ -1770,6 +1698,7 @@ class OrderServiceTest {
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
         when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+        givenResolvedAttendees(2);
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
 
@@ -1787,6 +1716,7 @@ class OrderServiceTest {
         request.setTicketTypeId(20L);
         request.setQuantity(2);
         request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setAttendeeIds(List.of(501L, 502L));
 
         TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
         lockResponse.setLockedSeatIds(List.of());
@@ -1794,6 +1724,7 @@ class OrderServiceTest {
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
         when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+        givenResolvedAttendees(2);
         doAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             order.setId(84L);
@@ -1810,64 +1741,24 @@ class OrderServiceTest {
     }
 
     @Test
-    void createOrderCountsPendingOrdersAgainstActivityLimit() {
-        CreateOrderRequest request = new CreateOrderRequest();
-        request.setUserId(2004L);
-        request.setSessionId(10L);
-        request.setTicketTypeId(20L);
-        request.setQuantity(2);
-
-        TicketSalesQuoteResponse quote = quoteWithLimit(2);
-        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
-        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
-        when(orderMapper.sumEffectiveQuantityByUserAndActivity(2004L, 100L)).thenReturn(2);
-
-        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(request));
-
-        assertEquals("超过本活动个人限购数量", ex.getMessage());
-        verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
-        verify(orderMapper, never()).insert(any(Order.class));
-        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
-    }
-
-    @Test
     void createOrderDoesNotCheckQuantityWhenActivityHasNoPerUserLimit() {
         CreateOrderRequest request = new CreateOrderRequest();
         request.setUserId(2004L);
         request.setSessionId(10L);
         request.setTicketTypeId(20L);
         request.setQuantity(5);
+        request.setAttendeeIds(List.of(501L, 502L, 503L, 504L, 505L));
 
         TicketSalesQuoteResponse quote = quoteWithoutLimit(5);
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
         when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), anyString())).thenReturn(Result.success());
+        givenResolvedAttendees(5);
 
         service.createOrder(request);
 
         verify(orderMapper, never()).sumEffectiveQuantityByUserAndActivity(any(), any());
         verify(orderMapper).insert(any(Order.class));
-    }
-
-    @Test
-    void createOrderRejectsLimitQuoteWithoutActivityId() {
-        CreateOrderRequest request = new CreateOrderRequest();
-        request.setUserId(2004L);
-        request.setSessionId(10L);
-        request.setTicketTypeId(20L);
-        request.setQuantity(1);
-
-        TicketSalesQuoteResponse quote = quoteWithLimit(1);
-        quote.setActivityId(null);
-        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
-        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
-
-        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(request));
-
-        assertEquals("活动限购信息不完整", ex.getMessage());
-        verify(orderMapper, never()).sumEffectiveQuantityByUserAndActivity(any(), any());
-        verify(orderMapper, never()).insert(any(Order.class));
-        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
     }
 
     @Test
@@ -1990,7 +1881,7 @@ class OrderServiceTest {
         lockedSeat.setStatus(1);
         lockedSeat.setLockExpireTime(java.time.LocalDateTime.now().minusMinutes(1));
         when(orderSeatMapper.selectList(any())).thenReturn(List.of(lockedSeat));
-        when(orderMapper.selectById(2201L)).thenReturn(order);
+        when(orderMapper.selectBatchIds(any())).thenReturn(List.of(order));
         when(paymentInternalClient.syncOrderForCancel(2201L, "test-internal-token"))
                 .thenReturn(Result.success(safeToCancelDecision()));
         when(orderMapper.updateStatusIfCurrent(2201L, OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED))
@@ -2003,10 +1894,9 @@ class OrderServiceTest {
         verify(orderAttendeeMapper).updateStatusByOrderId(2201L, 2);
     }
 
-    private TicketSalesQuoteResponse quoteWithLimit(int quantity) {
+    private TicketSalesQuoteResponse quoteWithActivity(int quantity) {
         TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
         quote.setActivityId(100L);
-        quote.setPerUserLimit(3);
         quote.setUnitPrice(new BigDecimal("100.00"));
         quote.setQuantity(quantity);
         return quote;
@@ -2133,6 +2023,15 @@ class OrderServiceTest {
         attendee.setIdNoMask(mask);
         attendee.setIdNoEncrypted(encrypted);
         return attendee;
+    }
+
+    private void givenResolvedAttendees(int quantity) {
+        java.util.List<ResolvedAttendeeResponse> attendees = new java.util.ArrayList<>();
+        for (int index = 0; index < quantity; index++) {
+            attendees.add(resolvedAttendee(500L + index, "Attendee" + index, "hash-" + index,
+                    "110***********01" + index, "enc-" + index));
+        }
+        when(userInternalClient.resolveAttendees(any(), anyString())).thenReturn(Result.success(attendees));
     }
 
     private void loadExceptionRatioRule(String resource) {

@@ -114,7 +114,8 @@ export class WaitlistAllocatorService {
           status: 'FAILED',
           message,
         });
-        return { status: 'FAILED', entryId: entry.id };
+        await this.repository.markAllocationEventFailed(event.eventKey, message);
+        throw error instanceof Error ? error : new Error(message);
       }
     }
 

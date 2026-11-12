@@ -17,12 +17,15 @@ import com.omni.user.dto.SupportMessageResponse;
 import com.omni.user.dto.SupportNoteRequest;
 import com.omni.user.dto.SupportNoteResponse;
 import com.omni.user.dto.SupportQuickReplyResponse;
+import com.omni.user.dto.SupportStreamTicketRequest;
+import com.omni.user.dto.SupportStreamTicketResponse;
 import com.omni.user.dto.SupportTagUpdateRequest;
 import com.omni.user.dto.SupportTransferRequest;
 import com.omni.user.service.CustomerSupportService;
 import com.omni.user.service.HelpCenterService;
 import com.omni.user.service.SupportAccountService;
 import com.omni.user.service.SupportContextService;
+import com.omni.user.service.SupportPushService;
 import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -42,16 +45,33 @@ public class SupportController {
     private final CustomerSupportService customerSupportService;
     private final SupportAccountService supportAccountService;
     private final SupportContextService supportContextService;
+    private final SupportPushService supportPushService;
 
     @Autowired
     public SupportController(HelpCenterService helpCenterService,
                              CustomerSupportService customerSupportService,
                              SupportAccountService supportAccountService,
-                             SupportContextService supportContextService) {
+                             SupportContextService supportContextService,
+                             SupportPushService supportPushService) {
         this.helpCenterService = helpCenterService;
         this.customerSupportService = customerSupportService;
         this.supportAccountService = supportAccountService;
         this.supportContextService = supportContextService;
+        this.supportPushService = supportPushService;
+    }
+
+    @PostMapping("/support/stream-ticket")
+    public Result<SupportStreamTicketResponse> issueStreamTicket(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody(required = false) SupportStreamTicketRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(customerSupportService.issueStreamTicket(userId, request));
+    }
+
+    @GetMapping(value = "/support/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter supportStream(@RequestParam("ticket") String ticket) {
+        return supportPushService.subscribe(ticket);
     }
 
     @GetMapping("/help/faqs")

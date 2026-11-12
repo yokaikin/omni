@@ -6,7 +6,9 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.core.toolkit.LambdaUtils;
 import com.omni.common.result.Result;
+import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
+import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.DeleteActivityRequest;
@@ -111,6 +113,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -448,7 +452,9 @@ class AdminControllerTest {
         Path file = Files.createTempFile("private-asset", ".pdf");
         Files.writeString(file, "content");
         when(privateAssetService.prepareDownload(1L, 2003L))
-                .thenReturn(new PrivateAssetDownload(file, "证明 文件.pdf", "application/pdf", 7L));
+                .thenReturn(new PrivateAssetDownload(
+                        new ByteArrayInputStream("content".getBytes(StandardCharsets.UTF_8)),
+                        "证明 文件.pdf", "application/pdf", 7L));
 
         ResponseEntity<InputStreamResource> response = controller.downloadPrivateAsset(
                 "Bearer " + JwtUtil.generateToken(2003L, "13800000002", "organizer"), 1L);
@@ -465,17 +471,13 @@ class AdminControllerTest {
     }
 
     @Test
-    void downloadPrivateAssetReturnsNotFoundWhenFileDisappears() throws Exception {
+    void downloadPrivateAssetReturnsNotFoundWhenFileDisappears() {
         AdminController controller = controller();
-        Path missingFile = Files.createTempFile("private-asset-missing", ".pdf");
-        Files.delete(missingFile);
         when(privateAssetService.prepareDownload(1L, 2003L))
-                .thenReturn(new PrivateAssetDownload(missingFile, "proof.pdf", "application/pdf", 7L));
+                .thenThrow(new BusinessException(ResultCode.NOT_FOUND, "私有资产文件不存在"));
 
-        ResponseEntity<InputStreamResource> response = controller.downloadPrivateAsset(
-                "Bearer " + JwtUtil.generateToken(2003L, "13800000002", "organizer"), 1L);
-
-        assertEquals(404, response.getStatusCodeValue());
+        assertThrows(BusinessException.class, () -> controller.downloadPrivateAsset(
+                "Bearer " + JwtUtil.generateToken(2003L, "13800000002", "organizer"), 1L));
         verify(privateAssetService).prepareDownload(1L, 2003L);
     }
 
@@ -803,13 +805,13 @@ class AdminControllerTest {
     void listToursPassesCategoryFilterToService() {
         AdminController controller = controller();
         Page<Tour> page = new Page<>(1, 10);
-        when(tourStationService.listManageableTours(2003L, 1, 10, 66L)).thenReturn(page);
+        when(tourStationService.listManageableTours(2003L, 1, 10, 66L, false)).thenReturn(page);
 
         Result<Page<Tour>> result = controller.listTours(organizerToken(), 9999L, 1, 10, 66L);
 
         assertEquals(200, result.getCode());
         assertEquals(page, result.getData());
-        verify(tourStationService).listManageableTours(2003L, 1, 10, 66L);
+        verify(tourStationService).listManageableTours(2003L, 1, 10, 66L, false);
     }
 
     @Test
@@ -1182,38 +1184,6 @@ class AdminControllerTest {
     }
 
     @Test
-    void createActivityRejectsNonPositivePerUserLimit() {
-        AdminController controller = controller();
-        allowActivityRole(2003L, "organizer");
-        Map<String, Object> body = validCreateActivityBody();
-        body.put("perUserLimit", 0);
-
-        Result<Activity> result = controller.createActivity(organizerToken(), body);
-
-        assertEquals(400, result.getCode());
-        assertEquals("个人限购张数必须大于0", result.getMessage());
-        verify(activityMapper, never()).insert(any(Activity.class));
-    }
-
-    @Test
-    void createActivitySavesPerUserLimit() {
-        AdminController controller = controller();
-        allowActivityRole(2003L, "organizer");
-        Map<String, Object> body = validCreateActivityBody();
-        body.put("perUserLimit", 3);
-        when(activityMapper.insert(any(Activity.class))).thenAnswer(invocation -> {
-            Activity activity = invocation.getArgument(0);
-            activity.setId(100L);
-            return 1;
-        });
-
-        Result<Activity> result = controller.createActivity(organizerToken(), body);
-
-        assertEquals(200, result.getCode());
-        assertEquals(3, result.getData().getPerUserLimit());
-    }
-
-    @Test
     void createActivityStoresRealNameRequirement() {
         AdminController controller = controller();
         allowActivityRole(2003L, "organizer");
@@ -1241,39 +1211,6 @@ class AdminControllerTest {
         verify(activityMapper).insert(captor.capture());
         assertEquals(200, result.getCode());
         assertEquals(Boolean.FALSE, captor.getValue().getTicketTransferAllowed());
-    }
-
-    @Test
-    void createActivityRejectsNonNumericPerUserLimit() {
-        AdminController controller = controller();
-        allowActivityRole(2003L, "organizer");
-        Map<String, Object> body = validCreateActivityBody();
-        body.put("perUserLimit", "abc");
-
-        Result<Activity> result = controller.createActivity(organizerToken(), body);
-
-        assertEquals(400, result.getCode());
-        assertEquals("个人限购张数必须为数字", result.getMessage());
-        verify(activityMapper, never()).insert(any(Activity.class));
-    }
-
-    @Test
-    void updateActivitySavesPerUserLimit() {
-        AdminController controller = controller();
-        allowActivityRole(2003L, "organizer");
-        Activity activity = new Activity();
-        activity.setId(10L);
-        activity.setOrganizerId(2003L);
-        when(activityMapper.selectById(10L)).thenReturn(activity);
-
-        Result<Activity> result = controller.updateActivity(10L, organizerToken(), Map.of(
-                "userId", 2003L,
-                "perUserLimit", 5
-        ));
-
-        assertEquals(200, result.getCode());
-        assertEquals(5, result.getData().getPerUserLimit());
-        verify(activityMapper).updateById(activity);
     }
 
     @Test
@@ -1313,26 +1250,6 @@ class AdminControllerTest {
 
         assertEquals(200, result.getCode());
         assertEquals(Boolean.FALSE, result.getData().getTicketTransferAllowed());
-        verify(activityMapper).updateById(activity);
-    }
-
-    @Test
-    void updateActivityClearsBlankPerUserLimit() {
-        AdminController controller = controller();
-        allowActivityRole(2003L, "organizer");
-        Activity activity = new Activity();
-        activity.setId(10L);
-        activity.setOrganizerId(2003L);
-        activity.setPerUserLimit(5);
-        when(activityMapper.selectById(10L)).thenReturn(activity);
-        Map<String, Object> body = new HashMap<>();
-        body.put("userId", 2003L);
-        body.put("perUserLimit", " ");
-
-        Result<Activity> result = controller.updateActivity(10L, organizerToken(), body);
-
-        assertEquals(200, result.getCode());
-        assertNull(result.getData().getPerUserLimit());
         verify(activityMapper).updateById(activity);
     }
 

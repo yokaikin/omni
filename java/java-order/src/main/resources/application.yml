@@ -1,4 +1,4 @@
-server:
+﻿server:
   port: 8083
 
 spring:
@@ -6,7 +6,7 @@ spring:
     name: java-order
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/omni_ticket
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/omni_order
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:123456}
   cloud:
@@ -28,6 +28,10 @@ spring:
     username: ${RABBITMQ_USER:admin}
     password: ${RABBITMQ_PASSWORD:123456}
     virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
 
 mybatis-plus:
   configuration:
@@ -36,6 +40,15 @@ mybatis-plus:
     db-config:
       id-type: auto
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
 internal:
   api:
      token: ${INTERNAL_API_TOKEN:omni-local-internal-token}
@@ -43,3 +56,6 @@ internal:
 omni:
   mq:
     enabled: true
+  order:
+    # 锁座/待支付订单释放窗口（分钟），同时控制候补订单超时扫描阈值
+    seat-lock-minutes: ${OMNI_ORDER_SEAT_LOCK_MINUTES:15}

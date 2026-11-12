@@ -17,7 +17,6 @@ public class TicketSalesQuoteResponse {
     private LocalDateTime sessionTime;
     private Long tourId;
     private Long stationId;
-    private Integer perUserLimit;
     private Boolean realNameRequired;
     private Boolean ticketTransferAllowed;
     private Integer refundFullDaysBefore;
@@ -51,8 +50,6 @@ public class TicketSalesQuoteResponse {
     public void setTourId(Long tourId) { this.tourId = tourId; }
     public Long getStationId() { return stationId; }
     public void setStationId(Long stationId) { this.stationId = stationId; }
-    public Integer getPerUserLimit() { return perUserLimit; }
-    public void setPerUserLimit(Integer perUserLimit) { this.perUserLimit = perUserLimit; }
     public Boolean getRealNameRequired() { return realNameRequired; }
     public void setRealNameRequired(Boolean realNameRequired) { this.realNameRequired = realNameRequired; }
     public Boolean getTicketTransferAllowed() { return ticketTransferAllowed; }

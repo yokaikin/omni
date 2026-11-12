@@ -1,6 +1,9 @@
 package com.omni.ticket.service;
 
 import com.omni.common.result.Result;
+import com.omni.common.storage.AssetStorageService;
+import com.omni.common.storage.DisabledObjectStorageClient;
+import com.omni.common.storage.DisabledVirusScanner;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.controller.AdminController;
@@ -73,6 +76,9 @@ class AssetManagementTest {
     @Mock StationConfigVersionService stationConfigVersionService;
     @Mock ActivityMarketingService activityMarketingService;
 
+    private final AssetStorageService assetStorageService =
+            new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true);
+
     private Path tempDir;
 
     @BeforeAll
@@ -130,7 +136,7 @@ class AssetManagementTest {
             when(ticketAssetMapper.insert(any(TicketAsset.class))).thenAnswer(inv -> {
                 TicketAsset a = inv.getArgument(0); a.setId(1L); return 1;
             });
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
 
             AssetUploadResponse r = svc.upload(2003L, "activity-poster", pngFile("cover.png"));
 
@@ -148,7 +154,7 @@ class AssetManagementTest {
             when(ticketAssetMapper.insert(any(TicketAsset.class))).thenAnswer(inv -> {
                 TicketAsset a = inv.getArgument(0); a.setId(2L); return 1;
             });
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
 
             AssetUploadResponse r = svc.upload(2003L, "activity-poster", pngFile("venue.jpg"));
 
@@ -161,7 +167,7 @@ class AssetManagementTest {
             when(ticketAssetMapper.insert(any(TicketAsset.class))).thenAnswer(inv -> {
                 TicketAsset a = inv.getArgument(0); a.setId(3L); return 1;
             });
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
 
             AssetUploadResponse r = svc.upload(2003L, "artist-avatar", pngFile("avatar.png"));
 
@@ -174,7 +180,7 @@ class AssetManagementTest {
         void fileStoragePath() throws Exception {
             ArgumentCaptor<TicketAsset> captor = ArgumentCaptor.forClass(TicketAsset.class);
             when(ticketAssetMapper.insert(captor.capture())).thenAnswer(inv -> { captor.getValue().setId(4L); return 1; });
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
 
             svc.upload(2003L, "activity-poster", pngFile("storage-test.png"));
 
@@ -191,7 +197,7 @@ class AssetManagementTest {
         void sha256Recorded() throws Exception {
             ArgumentCaptor<TicketAsset> captor = ArgumentCaptor.forClass(TicketAsset.class);
             when(ticketAssetMapper.insert(captor.capture())).thenAnswer(inv -> { captor.getValue().setId(5L); return 1; });
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
 
             svc.upload(2003L, "activity-poster", pngFile("hash-test.png"));
 
@@ -206,7 +212,7 @@ class AssetManagementTest {
             when(ticketAssetMapper.insert(any(TicketAsset.class))).thenAnswer(inv -> {
                 TicketAsset a = inv.getArgument(0); a.setId(6L); return 1;
             });
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
 
             AssetUploadResponse r = svc.upload(2003L, "activity-poster",
                     pngFile("my-custom-filename.png"));
@@ -219,7 +225,7 @@ class AssetManagementTest {
         void storedNameIsUuid() throws Exception {
             ArgumentCaptor<TicketAsset> captor = ArgumentCaptor.forClass(TicketAsset.class);
             when(ticketAssetMapper.insert(captor.capture())).thenAnswer(inv -> { captor.getValue().setId(7L); return 1; });
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
 
             svc.upload(2003L, "activity-poster", pngFile("uuid-test.png"));
 
@@ -235,7 +241,7 @@ class AssetManagementTest {
         void fileSizeRecorded() throws Exception {
             ArgumentCaptor<TicketAsset> captor = ArgumentCaptor.forClass(TicketAsset.class);
             when(ticketAssetMapper.insert(captor.capture())).thenAnswer(inv -> { captor.getValue().setId(8L); return 1; });
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
 
             byte[] content = new byte[100]; // exactly 100 bytes
             for (int i = 0; i < 100; i++) content[i] = (byte) i;
@@ -254,7 +260,7 @@ class AssetManagementTest {
         void mimeTypeRecorded() throws Exception {
             ArgumentCaptor<TicketAsset> captor = ArgumentCaptor.forClass(TicketAsset.class);
             when(ticketAssetMapper.insert(captor.capture())).thenAnswer(inv -> { captor.getValue().setId(9L); return 1; });
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
 
             svc.upload(2003L, "activity-poster", pngFile("mime-test.png"));
 
@@ -276,7 +282,7 @@ class AssetManagementTest {
                 PrivateAsset a = inv.getArgument(0); a.setId(10L); return 1;
             });
             PrivateAssetService svc = new PrivateAssetService(privateAssetMapper, venueApplicationMapper,
-                    userAccessService, tempDir.toString());
+                    userAccessService, assetStorageService, tempDir.toString());
 
             PrivateAssetResponse r = svc.upload(2003L, "venue-proof",
                     new MockMultipartFile("file", "license.pdf", "application/pdf",
@@ -295,7 +301,7 @@ class AssetManagementTest {
             ArgumentCaptor<PrivateAsset> captor = ArgumentCaptor.forClass(PrivateAsset.class);
             when(privateAssetMapper.insert(captor.capture())).thenAnswer(inv -> { captor.getValue().setId(11L); return 1; });
             PrivateAssetService svc = new PrivateAssetService(privateAssetMapper, venueApplicationMapper,
-                    userAccessService, tempDir.toString());
+                    userAccessService, assetStorageService, tempDir.toString());
 
             PrivateAssetResponse r = svc.upload(2003L, "venue-proof",
                     new MockMultipartFile("file", "license.pdf", "application/pdf",
@@ -315,7 +321,7 @@ class AssetManagementTest {
                 PrivateAsset a = inv.getArgument(0); a.setId(12L); return 1;
             });
             PrivateAssetService svc = new PrivateAssetService(privateAssetMapper, venueApplicationMapper,
-                    userAccessService, tempDir.toString());
+                    userAccessService, assetStorageService, tempDir.toString());
 
             PrivateAssetResponse r = svc.upload(2003L, "venue-proof",
                     new MockMultipartFile("file", "proof.pdf", "application/pdf",
@@ -331,7 +337,7 @@ class AssetManagementTest {
             ArgumentCaptor<PrivateAsset> captor = ArgumentCaptor.forClass(PrivateAsset.class);
             when(privateAssetMapper.insert(captor.capture())).thenAnswer(inv -> { captor.getValue().setId(13L); return 1; });
             PrivateAssetService svc = new PrivateAssetService(privateAssetMapper, venueApplicationMapper,
-                    userAccessService, tempDir.toString());
+                    userAccessService, assetStorageService, tempDir.toString());
 
             svc.upload(2003L, "venue-proof",
                     new MockMultipartFile("file", "id-test.pdf", "application/pdf",
@@ -355,7 +361,8 @@ class AssetManagementTest {
             Files.createDirectories(filePath.getParent());
             Files.write(filePath, new byte[]{1,2,3});
 
-            PrivateAssetDownload download = new PrivateAssetDownload(filePath, "test.pdf", "application/pdf", 3L);
+            PrivateAssetDownload download = new PrivateAssetDownload(
+                    new ByteArrayInputStream(new byte[]{1,2,3}), "test.pdf", "application/pdf", 3L);
 
             assertNotNull(download);
             assertEquals("test.pdf", download.getOriginalFilename());
@@ -402,7 +409,7 @@ class AssetManagementTest {
         @Test
         @DisplayName("AM-018: 文件过大(>5MB) → 400")
         void fileTooLarge() {
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
             MockMultipartFile large = new MockMultipartFile("file", "large.png", "image/png",
                     new byte[]{(byte)0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a}) {
                 @Override public long getSize() { return 6L * 1024L * 1024L; } // 6MB
@@ -416,7 +423,7 @@ class AssetManagementTest {
         @Test
         @DisplayName("AM-019: 不支持的MIME类型 → 400")
         void unsupportedMimeType() {
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
             MockMultipartFile exe = new MockMultipartFile("file", "malware.exe",
                     "application/x-msdownload", new byte[]{'M','Z',0,0});
 
@@ -427,7 +434,7 @@ class AssetManagementTest {
         @Test
         @DisplayName("AM-020: 空文件上传 → 400")
         void emptyFile() {
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
             MockMultipartFile empty = new MockMultipartFile("file", "empty.png", "image/png", new byte[0]);
 
             BusinessException ex = assertThrows(BusinessException.class,
@@ -438,7 +445,7 @@ class AssetManagementTest {
         @Test
         @DisplayName("AM-021: 无文件(null) → 400")
         void nullFile() {
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
 
             BusinessException ex = assertThrows(BusinessException.class,
                     () -> svc.upload(2003L, "activity-poster", null));
@@ -448,7 +455,7 @@ class AssetManagementTest {
         @Test
         @DisplayName("AM-022: 无效bizType → 400")
         void invalidBizType() {
-            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, tempDir.toString());
+            TicketAssetService svc = new TicketAssetService(ticketAssetMapper, assetStorageService, tempDir.toString());
 
             BusinessException ex = assertThrows(BusinessException.class,
                     () -> svc.upload(2003L, "invalid_biz", pngFile("test.png")));
@@ -468,7 +475,7 @@ class AssetManagementTest {
             when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2004L, "activity.manage", "tour.manage"))
                     .thenThrow(new BusinessException(403, "无权限"));
             PrivateAssetService svc = new PrivateAssetService(privateAssetMapper, venueApplicationMapper,
-                    userAccessService, tempDir.toString());
+                    userAccessService, assetStorageService, tempDir.toString());
 
             assertThrows(BusinessException.class,
                     () -> svc.upload(2004L, "venue-proof",
@@ -506,7 +513,7 @@ class AssetManagementTest {
             when(privateAssetMapper.selectById(200L)).thenReturn(asset);
 
             PrivateAssetService svc = new PrivateAssetService(privateAssetMapper, venueApplicationMapper,
-                    userAccessService, tempDir.toString());
+                    userAccessService, assetStorageService, tempDir.toString());
 
             // prepareDownload 会校验权限
             allowPrivateAssetAccess(2005L, "organizer");

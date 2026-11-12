@@ -1,5 +1,8 @@
 package com.omni.ticket.service;
 
+import com.omni.common.storage.AssetStorageService;
+import com.omni.common.storage.DisabledObjectStorageClient;
+import com.omni.common.storage.DisabledVirusScanner;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.dto.PrivateAssetDownload;
@@ -15,10 +18,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -44,6 +51,9 @@ class PrivateAssetServiceTest {
     private VenueApplicationMapper venueApplicationMapper;
     @Mock
     private UserAccessService userAccessService;
+
+    private final AssetStorageService assetStorageService =
+            new AssetStorageService(new DisabledObjectStorageClient(), new DisabledVirusScanner(), true);
 
     @Test
     void uploadVenueProofStoresPrivatePendingAsset() throws Exception {
@@ -173,7 +183,7 @@ class PrivateAssetServiceTest {
 
         PrivateAssetDownload download = service.prepareDownload(9101L, APPLICANT_ID);
 
-        assertEquals(privateRoot.resolve(asset.getRelativePath()), download.getPath());
+        assertEquals("%PDF-1.7\ncontent", new String(download.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
         assertEquals("proof.pdf", download.getOriginalFilename());
         assertEquals("application/pdf", download.getContentType());
         assertEquals(asset.getFileSize().longValue(), download.getFileSize());
@@ -189,7 +199,7 @@ class PrivateAssetServiceTest {
 
         PrivateAssetDownload download = service.prepareDownload(9101L, ADMIN_ID);
 
-        assertEquals(privateRoot.resolve(asset.getRelativePath()), download.getPath());
+        assertEquals("%PDF-1.7\ncontent", new String(download.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
     }
 
     @Test
@@ -216,8 +226,8 @@ class PrivateAssetServiceTest {
         when(venueApplicationMapper.selectById(301L)).thenReturn(venueApplication(301L, APPLICANT_ID));
         PrivateAssetService service = service(privateRoot);
 
-        assertEquals(privateRoot.resolve(asset.getRelativePath()), service.prepareDownload(9101L, ADMIN_ID).getPath());
-        assertEquals(privateRoot.resolve(asset.getRelativePath()), service.prepareDownload(9101L, APPLICANT_ID).getPath());
+        assertEquals("%PDF-1.7\ncontent", new String(service.prepareDownload(9101L, ADMIN_ID).getInputStream().readAllBytes(), StandardCharsets.UTF_8));
+        assertEquals("%PDF-1.7\ncontent", new String(service.prepareDownload(9101L, APPLICANT_ID).getInputStream().readAllBytes(), StandardCharsets.UTF_8));
     }
 
     @Test
@@ -244,7 +254,7 @@ class PrivateAssetServiceTest {
         when(venueApplicationMapper.selectById(301L)).thenReturn(venueApplication(301L, APPLICANT_ID));
         PrivateAssetService service = service(privateRoot);
 
-        assertEquals(privateRoot.resolve(asset.getRelativePath()), service.prepareDownload(9101L, APPLICANT_ID).getPath());
+        assertEquals("%PDF-1.7\ncontent", new String(service.prepareDownload(9101L, APPLICANT_ID).getInputStream().readAllBytes(), StandardCharsets.UTF_8));
     }
 
     @Test
@@ -303,7 +313,7 @@ class PrivateAssetServiceTest {
                 asset.setId(9102L);
                 return 1;
             });
-            PrivateAssetService service = new PrivateAssetService(privateAssetMapper, venueApplicationMapper, userAccessService, "");
+            PrivateAssetService service = new PrivateAssetService(privateAssetMapper, venueApplicationMapper, userAccessService, assetStorageService, "");
 
             PrivateAssetResponse response = service.upload(APPLICANT_ID, "venue-proof", pdfFile());
 
@@ -331,6 +341,41 @@ class PrivateAssetServiceTest {
                 () -> service.prepareDownload(9101L, APPLICANT_ID));
 
         assertEquals(403, error.getCode());
+    }
+
+    @Test
+    void presignedDownloadUrlThrowsWhenObjectStorageDisabled() throws Exception {
+        Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
+        PrivateAsset asset = pendingAsset(9101L, APPLICANT_ID, privateRoot);
+        when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
+        allowAssetAccess(APPLICANT_ID, "organizer");
+        PrivateAssetService service = service(privateRoot);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.presignedDownloadUrl(9101L, APPLICANT_ID, 300));
+
+        assertEquals(500, error.getCode());
+        assertEquals("对象存储未启用，无法生成签名下载地址", error.getMessage());
+    }
+
+    @Test
+    void cleanupExpiredPendingAssetsSoftDeletesAndRemovesFiles() throws Exception {
+        Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
+        PrivateAsset asset = pendingAsset(9101L, APPLICANT_ID, privateRoot);
+        asset.setCreateTime(LocalDateTime.now().minusDays(30));
+        Path stored = privateRoot.resolve(asset.getRelativePath());
+        assertTrue(Files.exists(stored));
+        when(privateAssetMapper.selectList(any())).thenReturn(Collections.singletonList(asset));
+        when(privateAssetMapper.updateById(asset)).thenReturn(1);
+        PrivateAssetService service = service(privateRoot);
+
+        int cleaned = service.cleanupExpiredPendingAssets(7);
+
+        assertEquals(1, cleaned);
+        assertEquals("deleted", asset.getStatus());
+        assertNotNull(asset.getDeletedAt());
+        assertTrue(!Files.exists(stored));
+        verify(privateAssetMapper).updateById(asset);
     }
 
     private Path findProjectRoot(Path start) {
@@ -402,6 +447,6 @@ class PrivateAssetServiceTest {
     }
 
     private PrivateAssetService service(Path privateRoot) {
-        return new PrivateAssetService(privateAssetMapper, venueApplicationMapper, userAccessService, privateRoot.toString());
+        return new PrivateAssetService(privateAssetMapper, venueApplicationMapper, userAccessService, assetStorageService, privateRoot.toString());
     }
 }

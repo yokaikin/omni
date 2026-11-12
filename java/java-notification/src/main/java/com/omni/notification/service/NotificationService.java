@@ -3,10 +3,15 @@ package com.omni.notification.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
+import com.omni.notification.dto.DirectChannelSendResult;
 import com.omni.notification.dto.InternalNotificationRequest;
 import com.omni.notification.dto.NotificationSummaryResponse;
+import com.omni.notification.email.EmailSendRequest;
+import com.omni.notification.email.EmailSendResult;
 import com.omni.notification.entity.Notification;
 import com.omni.notification.mapper.NotificationMapper;
+import com.omni.notification.sms.SmsSendRequest;
+import com.omni.notification.sms.SmsSendResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -28,46 +33,87 @@ public class NotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
-    private final NotificationMapper notificationMapper;
+    /** 通知记录状态：已写入记录，待发送 */
+    public static final int STATUS_PENDING_SEND = 0;
+    /** 通知记录状态：外部渠道确认发送成功 */
+    public static final int STATUS_SENT = 1;
+    /** 通知记录状态：外部渠道发送失败 */
+    public static final int STATUS_SEND_FAILED = 2;
 
-    public NotificationService(NotificationMapper notificationMapper) {
+    private final NotificationMapper notificationMapper;
+    private final NotificationChannelService notificationChannelService;
+
+    public NotificationService(NotificationMapper notificationMapper,
+                               NotificationChannelService notificationChannelService) {
         this.notificationMapper = notificationMapper;
+        this.notificationChannelService = notificationChannelService;
     }
 
     /**
-     * 发送短信通知。
+     * 发送短信通知：先写入记录（status=0 待发送），外部渠道发送成功后更新为已发送。
      */
-    public void sendSms(Long userId, Long orderId, String content) {
+    public DirectChannelSendResult sendSms(Long userId, Long orderId, String content) {
         Notification notification = new Notification();
         notification.setUserId(userId);
         notification.setOrderId(orderId);
         notification.setType("SMS");
         notification.setContent(content);
         applyOrderAction(notification);
-        notification.setStatus(1); // 已发送
+        notification.setStatus(STATUS_PENDING_SEND);
 
         notificationMapper.insert(notification);
-        log.info("======= 短信直发记录 =======");
-        log.info("用户ID: {}, 订单ID: {}, 内容: {}", userId, orderId, content);
-        log.info("============================");
+
+        SmsSendRequest request = new SmsSendRequest();
+        request.setUserId(userId);
+        request.setOrderId(orderId);
+        request.setEventId("DIRECT-SMS-" + notification.getId());
+        request.setEventType("DIRECT_SMS");
+        request.setContent(content);
+        SmsSendResult result = notificationChannelService.sendSms(request);
+        return finalizeDirectSend(notification, result == null ? null : result.getStatus(),
+                result == null ? "短信投递结果为空" : result.getFailureReason());
     }
 
     /**
-     * 发送邮件通知。
+     * 发送邮件通知：先写入记录（status=0 待发送），外部渠道发送成功后更新为已发送。
      */
-    public void sendEmail(Long userId, Long orderId, String content) {
+    public DirectChannelSendResult sendEmail(Long userId, Long orderId, String content) {
         Notification notification = new Notification();
         notification.setUserId(userId);
         notification.setOrderId(orderId);
         notification.setType("EMAIL");
         notification.setContent(content);
         applyOrderAction(notification);
-        notification.setStatus(1);
+        notification.setStatus(STATUS_PENDING_SEND);
 
         notificationMapper.insert(notification);
-        log.info("======= 邮件直发记录 =======");
-        log.info("用户ID: {}, 订单ID: {}, 内容: {}", userId, orderId, content);
-        log.info("============================");
+
+        EmailSendRequest request = new EmailSendRequest();
+        request.setUserId(userId);
+        request.setOrderId(orderId);
+        request.setEventId("DIRECT-EMAIL-" + notification.getId());
+        request.setEventType("DIRECT_EMAIL");
+        request.setSubject("Omni 通知");
+        request.setContent(content);
+        EmailSendResult result = notificationChannelService.sendEmail(request);
+        return finalizeDirectSend(notification, result == null ? null : result.getStatus(),
+                result == null ? "邮件投递结果为空" : result.getFailureReason());
+    }
+
+    private DirectChannelSendResult finalizeDirectSend(Notification notification, String deliveryStatus,
+                                                       String failureReason) {
+        int recordStatus = STATUS_SEND_FAILED;
+        if (NotificationChannelService.STATUS_SENT.equals(deliveryStatus)) {
+            recordStatus = STATUS_SENT;
+        } else if (NotificationChannelService.STATUS_SKIPPED.equals(deliveryStatus)) {
+            recordStatus = STATUS_PENDING_SEND;
+        }
+        notification.setStatus(recordStatus);
+        notification.setUpdateTime(LocalDateTime.now());
+        notificationMapper.updateById(notification);
+        log.info("直发通知记录已更新: id={}, type={}, deliveryStatus={}, recordStatus={}",
+                notification.getId(), notification.getType(), deliveryStatus, recordStatus);
+        return new DirectChannelSendResult(notification, deliveryStatus, failureReason);
     }
 
     public Notification createInternalMessage(InternalNotificationRequest request) {

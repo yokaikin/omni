@@ -281,15 +281,14 @@ class TourStationServiceTest {
         Map<String, Object> result = service.publishStation(2003L, 40L, Map.of(
                 "scheduleTba", false,
                 "startTime", "2026-06-01T19:30",
-                "endTime", "2026-06-01T21:30",
-                "perUserLimit", 2
+                "endTime", "2026-06-01T21:30"
         ));
 
         assertSame(activity, result.get("activity"));
         verify(activityMapper).updateById(argThat(updated -> Long.valueOf(30L).equals(updated.getId())
                 && "published".equals(updated.getPublishStatus())
                 && Long.valueOf(88L).equals(updated.getVenueApplicationId())
-                && Integer.valueOf(2).equals(updated.getPerUserLimit())));
+                && Boolean.TRUE.equals(updated.getRealNameRequired())));
         verify(sessionMapper).insert(argThat(session -> Long.valueOf(30L).equals(session.getActivityId())
                 && Long.valueOf(66L).equals(session.getVenueId())
                 && LocalDateTime.of(2026, 6, 1, 19, 30).equals(session.getStartTime())

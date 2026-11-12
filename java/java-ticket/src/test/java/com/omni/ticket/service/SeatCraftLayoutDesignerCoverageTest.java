@@ -94,7 +94,11 @@ class SeatCraftLayoutDesignerCoverageTest {
         @Test @DisplayName("SC-020: station ownerType")
         void sc020() { when(scvs.getDraft("station",10L)).thenReturn(layout()); assertEquals(200,ctl.getSeatCraftDraft(ot(),"station",10L).getCode()); }
         @Test @DisplayName("SC-021: invalid ownerType → 400")
-        void sc021() { Result<?> r=ctl.getSeatCraftDraft(ot(),"invalid",10L); assertEquals(200,r.getCode()); }
+        void sc021() {
+            com.omni.exception.BusinessException ex = assertThrows(com.omni.exception.BusinessException.class,
+                    () -> ctl.getSeatCraftDraft(ot(),"invalid",10L));
+            assertEquals(400, ex.getCode());
+        }
     }
 
     // ===== 4.5 Permission (SC-022~024) =====

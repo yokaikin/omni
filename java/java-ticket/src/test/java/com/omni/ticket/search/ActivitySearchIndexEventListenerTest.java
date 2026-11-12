@@ -1,6 +1,8 @@
 package com.omni.ticket.search;
 
 import com.omni.common.mq.MqConstants;
+import com.omni.common.mq.MqMetricsRecorder;
+import com.omni.common.mq.MqProperties;
 import com.omni.common.mq.message.ActivitySearchIndexMessage;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
@@ -22,8 +24,10 @@ class ActivitySearchIndexEventListenerTest {
 
     private final ActivitySearchIndexService indexService = mock(ActivitySearchIndexService.class);
     private final RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+    private final MqProperties mqProperties = new MqProperties();
+    private final MqMetricsRecorder metricsRecorder = mock(MqMetricsRecorder.class);
     private final ActivitySearchIndexEventListener listener =
-            new ActivitySearchIndexEventListener(indexService, rabbitTemplate);
+            new ActivitySearchIndexEventListener(indexService, rabbitTemplate, mqProperties, metricsRecorder);
 
     @Test
     void upsertMessageCallsIndexService() {

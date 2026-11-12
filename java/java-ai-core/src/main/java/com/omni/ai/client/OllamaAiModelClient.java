@@ -29,24 +29,36 @@ public final class OllamaAiModelClient implements AiModelClient {
     private final int timeoutMillis;
     private final int contextWindow;
     private final String apiKey;
+    private final String keepAlive;
     private final ObjectMapper objectMapper;
     private final OllamaResponseParser parser;
     private final HttpClient httpClient;
 
     public OllamaAiModelClient(boolean enabled, String endpoint, String model, int timeoutMillis,
                                int contextWindow, String apiKey, ObjectMapper objectMapper) {
-        this(enabled, endpoint, model, timeoutMillis, contextWindow, apiKey, objectMapper,
+        this(enabled, endpoint, model, timeoutMillis, contextWindow, apiKey, null, objectMapper);
+    }
+
+    public OllamaAiModelClient(boolean enabled, String endpoint, String model, int timeoutMillis,
+                               int contextWindow, String apiKey, String keepAlive, ObjectMapper objectMapper) {
+        this(enabled, endpoint, model, timeoutMillis, contextWindow, apiKey, keepAlive, objectMapper,
                 HttpClient.newBuilder().connectTimeout(Duration.ofMillis(Math.max(timeoutMillis, 1000))).build());
     }
 
     OllamaAiModelClient(boolean enabled, String endpoint, String model, int timeoutMillis,
                        int contextWindow, String apiKey, ObjectMapper objectMapper, HttpClient httpClient) {
+        this(enabled, endpoint, model, timeoutMillis, contextWindow, apiKey, null, objectMapper, httpClient);
+    }
+
+    OllamaAiModelClient(boolean enabled, String endpoint, String model, int timeoutMillis,
+                       int contextWindow, String apiKey, String keepAlive, ObjectMapper objectMapper, HttpClient httpClient) {
         this.enabled = enabled;
         this.endpoint = endpoint;
         this.model = model;
         this.timeoutMillis = Math.max(timeoutMillis, 1000);
         this.contextWindow = contextWindow;
         this.apiKey = apiKey;
+        this.keepAlive = keepAlive;
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.parser = new OllamaResponseParser(objectMapper);
         this.httpClient = httpClient;
@@ -239,6 +251,9 @@ public final class OllamaAiModelClient implements AiModelClient {
         if (!options.isEmpty()) payload.put("options", options);
         if (!chatCompletions && request.getResponseFormat() != null) {
             payload.put("format", request.getResponseFormat());
+        }
+        if (!chatCompletions && hasText(keepAlive)) {
+            payload.put("keep_alive", keepAlive);
         }
         return payload;
     }

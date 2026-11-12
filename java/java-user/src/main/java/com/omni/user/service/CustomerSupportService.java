@@ -16,6 +16,8 @@ import com.omni.user.dto.SupportMessageResponse;
 import com.omni.user.dto.SupportNoteRequest;
 import com.omni.user.dto.SupportNoteResponse;
 import com.omni.user.dto.SupportQuickReplyResponse;
+import com.omni.user.dto.SupportStreamTicketRequest;
+import com.omni.user.dto.SupportStreamTicketResponse;
 import com.omni.user.dto.SupportTagUpdateRequest;
 import com.omni.user.dto.SupportTransferRequest;
 import com.omni.user.entity.SupportAccount;
@@ -85,6 +87,7 @@ public class CustomerSupportService {
     private final UserMapper userMapper;
     private final SupportAiService supportAiService;
     private final NotificationMqProducer notificationProducer;
+    private final SupportPushService supportPushService;
     private final String internalApiToken;
     private final Executor supportAiExecutor;
     private final ConcurrentMap<Long, LocalDateTime> helpPresence = new ConcurrentHashMap<>();
@@ -100,6 +103,7 @@ public class CustomerSupportService {
                                   UserMapper userMapper,
                                   SupportAiService supportAiService,
                                   NotificationMqProducer notificationProducer,
+                                  SupportPushService supportPushService,
                                   @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
                                   @Qualifier("supportAiExecutor") Executor supportAiExecutor) {
         this.conversationMapper = conversationMapper;
@@ -112,6 +116,7 @@ public class CustomerSupportService {
         this.userMapper = userMapper;
         this.supportAiService = supportAiService;
         this.notificationProducer = notificationProducer;
+        this.supportPushService = supportPushService;
         this.internalApiToken = internalApiToken;
         this.supportAiExecutor = supportAiExecutor;
     }
@@ -125,10 +130,11 @@ public class CustomerSupportService {
                                   UserMapper userMapper,
                                   SupportAiService supportAiService,
                                   NotificationMqProducer notificationProducer,
+                                  SupportPushService supportPushService,
                                   String internalApiToken,
                                   Executor supportAiExecutor) {
         this(conversationMapper, messageMapper, noteMapper, tagMapper, auditMapper, quickReplyMapper, null,
-                userMapper, supportAiService, notificationProducer, internalApiToken, supportAiExecutor);
+                userMapper, supportAiService, notificationProducer, supportPushService, internalApiToken, supportAiExecutor);
     }
 
     @Transactional
@@ -158,6 +164,7 @@ public class CustomerSupportService {
                 queueAiReply(conversation.getId(), initialMessage);
             }
         }
+        pushConversationEvent(conversation.getUserId(), conversation.getId());
         return toConversationResponse(conversation);
     }
 
@@ -381,6 +388,7 @@ public class CustomerSupportService {
         if ("AGENT".equals(senderType)) {
             notifySupportReply(conversation, message);
         }
+        pushMessageEvent(conversation.getUserId(), conversation.getId());
 
         if ("USER".equals(senderType) && SOURCE_AI.equals(conversation.getSourceType()) && conversation.getAssignedAgentId() == null) {
             queueAiReply(conversation.getId(), content);
@@ -420,6 +428,7 @@ public class CustomerSupportService {
         touch(conversation);
         conversationMapper.updateById(conversation);
         insertMessage(conversation.getId(), null, "SYSTEM", "人工介入请等待");
+        pushConversationEvent(conversation.getUserId(), conversation.getId());
         return toConversationResponse(conversation);
     }
 
@@ -438,6 +447,7 @@ public class CustomerSupportService {
         touch(conversation);
         conversationMapper.updateById(conversation);
         insertMessage(conversation.getId(), agentUserId, "SYSTEM", joinedMessage);
+        pushConversationEvent(conversation.getUserId(), conversation.getId());
         return toConversationResponse(conversation);
     }
 
@@ -465,6 +475,7 @@ public class CustomerSupportService {
         conversationMapper.updateById(conversation);
         insertMessage(conversation.getId(), agentUserId, "SYSTEM", message);
         writeAudit(conversationId, agentUserId, "CLOSE_REQUESTED", fromStatus, STATUS_CLOSE_REQUESTED, message);
+        pushConversationEvent(conversation.getUserId(), conversation.getId());
         return toConversationResponse(conversation);
     }
 
@@ -481,6 +492,7 @@ public class CustomerSupportService {
         conversationMapper.updateById(conversation);
         insertMessage(conversation.getId(), userId, "SYSTEM", "用户已确认结束会话");
         writeAudit(conversationId, userId, "CLOSED_CONFIRMED", STATUS_CLOSE_REQUESTED, STATUS_CLOSED, "用户已确认结束会话");
+        pushConversationEvent(conversation.getUserId(), conversation.getId());
         return toConversationResponse(conversation);
     }
 
@@ -498,6 +510,7 @@ public class CustomerSupportService {
         conversationMapper.updateById(conversation);
         insertMessage(conversation.getId(), userId, "SYSTEM", message);
         writeAudit(conversationId, userId, "CLOSE_REJECTED", STATUS_CLOSE_REQUESTED, STATUS_ASSIGNED, message);
+        pushConversationEvent(conversation.getUserId(), conversation.getId());
         return toConversationResponse(conversation);
     }
 
@@ -529,6 +542,7 @@ public class CustomerSupportService {
         conversationMapper.updateById(conversation);
         insertMessage(conversation.getId(), agentUserId, "SYSTEM", detail);
         writeAudit(conversationId, agentUserId, "TRANSFERRED", fromStatus, STATUS_ASSIGNED, detail);
+        pushConversationEvent(conversation.getUserId(), conversation.getId());
         return toConversationResponse(conversation);
     }
 
@@ -549,6 +563,7 @@ public class CustomerSupportService {
         conversationMapper.updateById(conversation);
         insertMessage(conversation.getId(), agentUserId, "SYSTEM", detail);
         writeAudit(conversationId, agentUserId, "ESCALATED", conversation.getStatus(), conversation.getStatus(), detail);
+        pushConversationEvent(conversation.getUserId(), conversation.getId());
         return toConversationResponse(conversation);
     }
 
@@ -603,6 +618,7 @@ public class CustomerSupportService {
             conversationMapper.updateById(conversation);
             insertMessage(conversation.getId(), null, "SYSTEM", AUTO_CLOSE_MESSAGE);
             writeAudit(conversation.getId(), null, "AUTO_CLOSED", fromStatus, STATUS_CLOSED, AUTO_CLOSE_MESSAGE);
+            pushConversationEvent(conversation.getUserId(), conversation.getId());
             closedCount++;
         }
         return closedCount;
@@ -732,6 +748,39 @@ public class CustomerSupportService {
         return message;
     }
 
+    private void pushMessageEvent(Long ownerUserId, Long conversationId) {
+        if (supportPushService != null) {
+            supportPushService.publishAfterCommit(ownerUserId, conversationId, "message");
+        }
+    }
+
+    private void pushConversationEvent(Long ownerUserId, Long conversationId) {
+        if (supportPushService != null) {
+            supportPushService.publishAfterCommit(ownerUserId, conversationId, "conversation");
+        }
+    }
+
+    /**
+     * 签发一次性推送票据：user 通道任何登录用户可用，agent 通道需客服/管理员角色。
+     */
+    public SupportStreamTicketResponse issueStreamTicket(Long userId, SupportStreamTicketRequest request) {
+        if (supportPushService == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "推送服务不可用");
+        }
+        User user = requireActiveUser(userId);
+        String channel = request == null ? null : trimToNull(request.getChannel());
+        if (SupportPushService.CHANNEL_AGENT.equals(channel)) {
+            requireSupportOrAdmin(userId);
+        } else {
+            channel = SupportPushService.CHANNEL_USER;
+        }
+        SupportStreamTicketResponse response = new SupportStreamTicketResponse();
+        response.setTicket(supportPushService.issueTicket(userId, channel));
+        response.setChannel(channel);
+        response.setExpiresInMs(30_000L);
+        return response;
+    }
+
     private SupportMessageResponse insertUserMessageForAiStream(Long actorUserId, Long conversationId, String content) {
         if (content == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "消息内容不能为空");
@@ -751,6 +800,7 @@ public class CustomerSupportService {
         }
         touch(conversation);
         conversationMapper.updateById(conversation);
+        pushMessageEvent(conversation.getUserId(), conversation.getId());
         return toMessageResponse(message);
     }
 
@@ -782,6 +832,7 @@ public class CustomerSupportService {
                 conversation.setLastMessage(answer);
                 touch(conversation);
                 conversationMapper.updateById(conversation);
+                pushMessageEvent(conversation.getUserId(), conversation.getId());
                 assistantMessage = toMessageResponse(message);
             }
             sendDoneAndComplete(emitter, assistantMessage);
@@ -901,6 +952,7 @@ public class CustomerSupportService {
             conversation.setLastMessage(answer);
             touch(conversation);
             conversationMapper.updateById(conversation);
+            pushMessageEvent(conversation.getUserId(), conversation.getId());
         } catch (RuntimeException e) {
             log.warn("客服 AI 回复生成失败: conversationId={}, message={}", conversationId, e.getMessage());
         }

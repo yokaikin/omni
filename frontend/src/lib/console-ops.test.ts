@@ -39,12 +39,12 @@ test('builds infrastructure health items without treating missing probes as heal
   assert.equal(items.find(item => item.key === 'nacos')?.status, 'ok')
   assert.equal(items.find(item => item.key === 'nacos')?.statusLabel, '正常')
   assert.equal(items.find(item => item.key === 'redis')?.status, 'degraded')
-  assert.equal(items.find(item => item.key === 'redis')?.statusLabel, '状态待核对')
+  assert.equal(items.find(item => item.key === 'redis')?.statusLabel, '异常')
   assert.equal(items.find(item => item.key === 'rabbitmq')?.status, 'not_configured')
   assert.equal(items.find(item => item.key === 'rabbitmq')?.statusLabel, '未配置')
   assert.equal(items.find(item => item.key === 'rabbitmq')?.message, '基础设施探针未配置')
   assert.equal(items.find(item => item.key === 'future')?.status, 'degraded')
-  assert.equal(items.find(item => item.key === 'future')?.statusLabel, '状态待核对')
+  assert.equal(items.find(item => item.key === 'future')?.statusLabel, '异常')
 })
 
 test('builds review-needed infrastructure health items when backend has not returned probes', () => {

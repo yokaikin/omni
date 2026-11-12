@@ -9,6 +9,7 @@ import com.omni.order.dto.InternalUserRefResponse;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.PaymentSyncDecisionResponse;
+import com.omni.order.dto.ResolvedAttendeeResponse;
 import com.omni.order.dto.TicketSalesLockRequest;
 import com.omni.order.dto.TicketSalesOrderRequest;
 import com.omni.order.dto.TicketSalesQuoteRequest;
@@ -64,7 +65,7 @@ class OrderSeatServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new OrderService(orderMapper, orderSeatMapper, paymentInternalClient, ticketSalesInternalClient);
+        service = new OrderService(orderMapper, orderSeatMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient);
     }
 
     private PaymentSyncDecisionResponse safeToCancelDecision() {
@@ -82,6 +83,9 @@ class OrderSeatServiceTest {
         request.setTicketTypeId(1001L);
         request.setSeatIds(Arrays.asList(11L, 12L));
         request.setUnitPrice(new BigDecimal("280.00"));
+        request.setAttendeeIds(Arrays.asList(501L, 502L));
+
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
 
         TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
         quote.setUnitPrice(new BigDecimal("280.00"));
@@ -90,6 +94,7 @@ class OrderSeatServiceTest {
         quote.setQuantity(2);
         when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
                 .thenReturn(Result.success(quote));
+        givenResolvedAttendees(2);
 
         TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
         lockResponse.setLockedSeatIds(Arrays.asList(11L, 12L));
@@ -112,12 +117,16 @@ class OrderSeatServiceTest {
         request.setTicketTypeId(1001L);
         request.setQuantity(2);
         request.setUnitPrice(new BigDecimal("1.00"));
+        request.setAttendeeIds(Arrays.asList(501L, 502L));
+
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
 
         TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
         quote.setUnitPrice(new BigDecimal("180.00"));
         quote.setQuantity(2);
         when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
                 .thenReturn(Result.success(quote));
+        givenResolvedAttendees(2);
 
         when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token")))
                 .thenReturn(Result.success());
@@ -137,12 +146,16 @@ class OrderSeatServiceTest {
         request.setSessionId(101L);
         request.setTicketTypeId(1001L);
         request.setQuantity(2);
+        request.setAttendeeIds(Arrays.asList(501L, 502L));
+
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
 
         TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
         quote.setUnitPrice(new BigDecimal("180.00"));
         quote.setQuantity(2);
         when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
                 .thenReturn(Result.success(quote));
+        givenResolvedAttendees(2);
 
         when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token")))
                 .thenReturn(Result.fail(400, "票档库存不足"));
@@ -205,12 +218,16 @@ class OrderSeatServiceTest {
         request.setSessionId(101L);
         request.setTicketTypeId(1001L);
         request.setQuantity(3);
+        request.setAttendeeIds(Arrays.asList(501L, 502L, 503L));
+
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
 
         TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
         quote.setUnitPrice(new BigDecimal("180.00"));
         quote.setQuantity(3);
         when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
                 .thenReturn(Result.success(quote));
+        givenResolvedAttendees(3);
 
         TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
         lockResponse.setLockedSeatIds(List.of(3001L, 3002L, 3003L));
@@ -235,12 +252,16 @@ class OrderSeatServiceTest {
         request.setSessionId(101L);
         request.setTicketTypeId(1001L);
         request.setQuantity(3);
+        request.setAttendeeIds(Arrays.asList(501L, 502L, 503L));
+
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
 
         TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
         quote.setUnitPrice(new BigDecimal("180.00"));
         quote.setQuantity(3);
         when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
                 .thenReturn(Result.success(quote));
+        givenResolvedAttendees(3);
 
         when(ticketSalesInternalClient.lockSeats(any(TicketSalesLockRequest.class), eq("test-internal-token")))
                 .thenReturn(Result.fail(400, "票档库存不足"));
@@ -352,7 +373,7 @@ class OrderSeatServiceTest {
         OrderSeat expiredSeat = lockedOrderSeat(9002L, order.getId(), 3002L, 102L, 2002L);
         expiredSeat.setLockExpireTime(LocalDateTime.now().minusMinutes(1));
         when(orderSeatMapper.selectList(any())).thenReturn(List.of(expiredSeat));
-        when(orderMapper.selectById(order.getId())).thenReturn(order);
+        when(orderMapper.selectBatchIds(any())).thenReturn(List.of(order));
         when(paymentInternalClient.syncOrderForCancel(order.getId(), "test-internal-token"))
                 .thenReturn(Result.success(safeToCancelDecision()));
         when(orderMapper.updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED)).thenReturn(1);
@@ -475,6 +496,32 @@ class OrderSeatServiceTest {
         verify(ticketSalesInternalClient, never()).quote(any(), any());
         verify(ticketSalesInternalClient, never()).lockStock(any(), any());
         verify(orderMapper, never()).insert(any());
+    }
+
+    private InternalUserRefResponse activeUser() {
+        InternalUserRefResponse user = new InternalUserRefResponse();
+        user.setId(2004L);
+        user.setStatus(1);
+        return user;
+    }
+
+    private ResolvedAttendeeResponse resolvedAttendee(Long id, String hash) {
+        ResolvedAttendeeResponse attendee = new ResolvedAttendeeResponse();
+        attendee.setId(id);
+        attendee.setRealName("观演人" + id);
+        attendee.setIdType("ID_CARD");
+        attendee.setIdNoHash(hash);
+        attendee.setIdNoMask("110***********" + (id % 100));
+        attendee.setIdNoEncrypted("enc-" + hash);
+        return attendee;
+    }
+
+    private void givenResolvedAttendees(int quantity) {
+        List<ResolvedAttendeeResponse> attendees = new java.util.ArrayList<>();
+        for (int index = 0; index < quantity; index++) {
+            attendees.add(resolvedAttendee(501L + index, "hash-" + index));
+        }
+        when(userInternalClient.resolveAttendees(any(), anyString())).thenReturn(Result.success(attendees));
     }
 
     private Order pendingOrder(Long id, Long sessionId, Long ticketTypeId) {

@@ -126,7 +126,7 @@ function normalizeInfrastructureStatus(status?: string | null): InfrastructureHe
 function formatInfrastructureStatusLabel(status: InfrastructureHealthItem['status']): string {
   if (status === 'ok') return '正常'
   if (status === 'not_configured') return '未配置'
-  return '状态待核对'
+  return '异常'
 }
 
 function fallbackInfrastructureMessage(status: InfrastructureHealthItem['status']): string {

@@ -1,4 +1,4 @@
-server:
+﻿server:
   port: 8082
 
 spring:
@@ -10,7 +10,7 @@ spring:
       max-request-size: 12MB
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/omni_ticket
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/omni_ticket_split
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:123456}
   cloud:
@@ -32,6 +32,10 @@ spring:
     username: ${RABBITMQ_USER:admin}
     password: ${RABBITMQ_PASSWORD:123456}
     virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
   elasticsearch:
     uris: ${ELASTICSEARCH_URIS:${SPRING_ELASTICSEARCH_URIS:http://localhost:9200}}
     username: ${ELASTICSEARCH_USERNAME:}
@@ -40,6 +44,15 @@ spring:
 internal:
   api:
     token: ${INTERNAL_API_TOKEN:omni-local-internal-token}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 mybatis-plus:
   configuration:
@@ -51,6 +64,26 @@ mybatis-plus:
 omni:
   mq:
     enabled: true
+  admin-auth:
+    # 客服工作台的“最近订单上下文”由 AdminOrderContextService.authorize 单独管控
+    # （允许 admin 及 support.conversation.view/cs.manage/cs.review 权限持有者）。
+    exclude-paths: /api/ticket/admin/orders/user-recent-context
+  object-storage:
+    provider: ${OMNI_OBJECT_STORAGE_PROVIDER:disabled}
+    minio:
+      endpoint: ${OMNI_OBJECT_STORAGE_ENDPOINT:}
+      public-endpoint: ${OMNI_OBJECT_STORAGE_PUBLIC_ENDPOINT:}
+      access-key: ${OMNI_OBJECT_STORAGE_ACCESS_KEY:}
+      secret-key: ${OMNI_OBJECT_STORAGE_SECRET_KEY:}
+      bucket: ${OMNI_OBJECT_STORAGE_BUCKET:omni-assets}
+  virus-scanner:
+    provider: ${OMNI_VIRUS_SCANNER_PROVIDER:disabled}
+    fail-open: ${OMNI_VIRUS_SCANNER_FAIL_OPEN:false}
+    clamd:
+      host: ${OMNI_CLAMD_HOST:localhost}
+      port: ${OMNI_CLAMD_PORT:3310}
+  private-asset:
+    pending-retention-days: ${OMNI_PRIVATE_ASSET_PENDING_RETENTION_DAYS:7}
   search:
     provider: elasticsearch
     require-elasticsearch: true
@@ -62,5 +95,10 @@ omni:
       endpoint: ${OMNI_TICKET_AI_ENDPOINT:http://localhost:11434/api/chat}
       model: ${OMNI_TICKET_AI_MODEL:Qwen2.5:7b}
       timeout-ms: ${OMNI_TICKET_AI_TIMEOUT_MS:30000}
+      # 模型驻留时长：防止 Ollama 默认 5 分钟后卸载导致每次空闲后首调冷加载
+      keep-alive: ${OMNI_TICKET_AI_KEEP_ALIVE:30m}
+      # 启动后异步预热，消除 AI Finder 首次调用冷启动
+      warmup-enabled: ${OMNI_TICKET_AI_WARMUP_ENABLED:true}
+      warmup-delay-ms: ${OMNI_TICKET_AI_WARMUP_DELAY_MS:2000}
       context-window: ${OMNI_TICKET_AI_CONTEXT_WINDOW:2048}
       api-key: ${OMNI_TICKET_AI_API_KEY:}

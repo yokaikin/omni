@@ -2,6 +2,7 @@ package com.omni.notification.controller;
 
 import com.omni.common.result.Result;
 import com.omni.common.mq.message.NotificationEventMessage;
+import com.omni.notification.dto.ChannelStatusResponse;
 import com.omni.notification.entity.Notification;
 import com.omni.notification.service.NotificationEventService;
 import com.omni.notification.service.NotificationService;
@@ -84,7 +85,7 @@ class NotificationControllerAuthTest {
         NotificationService service = mock(NotificationService.class);
         NotificationController controller = controller(service);
 
-        Result<Void> result = controller.sendSms(bearer(2004L), Map.of(
+        Result<Notification> result = controller.sendSms(bearer(2004L), Map.of(
                 "userId", 9999L,
                 "orderId", 10L,
                 "content", "hi"
@@ -116,7 +117,7 @@ class NotificationControllerAuthTest {
         NotificationService service = mock(NotificationService.class);
         NotificationController controller = controller(service);
 
-        Result<Void> result = controller.sendSms(null, Map.of(
+        Result<Notification> result = controller.sendSms(null, Map.of(
                 "userId", 9999L,
                 "orderId", 10L,
                 "content", "hi"
@@ -131,7 +132,7 @@ class NotificationControllerAuthTest {
         NotificationService service = mock(NotificationService.class);
         NotificationController controller = controller(service);
 
-        Result<Void> result = controller.sendEmail(bearer(2004L), Map.of(
+        Result<Notification> result = controller.sendEmail(bearer(2004L), Map.of(
                 "userId", 9999L,
                 "orderId", 10L,
                 "content", "hi"
@@ -163,7 +164,7 @@ class NotificationControllerAuthTest {
         NotificationService service = mock(NotificationService.class);
         NotificationController controller = controller(service);
 
-        Result<Void> result = controller.sendEmail(null, Map.of(
+        Result<Notification> result = controller.sendEmail(null, Map.of(
                 "userId", 9999L,
                 "orderId", 10L,
                 "content", "hi"
@@ -224,6 +225,36 @@ class NotificationControllerAuthTest {
         assertEquals(200, result.getCode());
         assertEquals(List.of(first), result.getData());
         verify(service).listNotifications(2004L);
+    }
+
+    @Test
+    void channelStatusRequiresInternalToken() {
+        NotificationService service = mock(NotificationService.class);
+        NotificationController controller = controller(service);
+
+        Result<ChannelStatusResponse> result = controller.getChannelStatus(null);
+
+        assertEquals(403, result.getCode());
+    }
+
+    @Test
+    void channelStatusReturnsProviderConfiguration() {
+        NotificationService service = mock(NotificationService.class);
+        NotificationController controller = controller(service);
+        ReflectionTestUtils.setField(controller, "smsProvider", "aliyun");
+        ReflectionTestUtils.setField(controller, "emailProvider", "smtp");
+        ReflectionTestUtils.setField(controller, "objectStorageProvider", "minio");
+        ReflectionTestUtils.setField(controller, "directChannelEnabled", true);
+        ReflectionTestUtils.setField(controller, "deliveryRetryMaxAttempts", 5);
+
+        Result<ChannelStatusResponse> result = controller.getChannelStatus("internal-token");
+
+        assertEquals(200, result.getCode());
+        assertEquals("aliyun", result.getData().getSmsProvider());
+        assertEquals("smtp", result.getData().getEmailProvider());
+        assertEquals("minio", result.getData().getObjectStorageProvider());
+        assertEquals(true, result.getData().isDirectChannelEnabled());
+        assertEquals(5, result.getData().getDeliveryRetryMaxAttempts());
     }
 
     private static NotificationController controller(NotificationService service) {

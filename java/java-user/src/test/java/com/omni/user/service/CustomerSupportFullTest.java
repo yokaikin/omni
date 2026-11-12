@@ -70,8 +70,8 @@ class CustomerSupportFullTest {
     @BeforeEach void setUp() {
         service = new CustomerSupportService(conversationMapper, messageMapper, noteMapper, tagMapper, auditMapper,
                 quickReplyMapper, userMapper, new SupportAiService((q,k)->Optional.empty()),
-                notificationProducer, "test-token", Runnable::run);
-        controller = new SupportController(helpCenterService, customerSupportService, supportAccountService, supportContextService);
+                notificationProducer, new SupportPushService(), "test-token", Runnable::run);
+        controller = new SupportController(helpCenterService, customerSupportService, supportAccountService, supportContextService, new SupportPushService());
     }
 
     // ============ 3.1 Start Conversation (CS-001~004) ============

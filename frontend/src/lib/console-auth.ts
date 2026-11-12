@@ -25,6 +25,7 @@ const PATH_PERMISSION_MAP: Record<string, string[]> = {
   '/console/audit-logs': ['audit.view'],
   '/console/exception-tasks': ['compensation.execute'],
   '/console/reconciliation': ['reconcile.view'],
+  '/console/search-ops': ['activity.manage', 'rbac.manage'],
 }
 
 const SUPPORT_CONSOLE_PERMISSIONS = [

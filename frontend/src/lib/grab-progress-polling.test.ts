@@ -27,3 +27,23 @@ test('starts grab progress polling immediately and repeats every 500ms', () => {
 
   assert.deepEqual(cleared, ['timer-1'])
 })
+
+test('supports a custom polling interval', () => {
+  const intervals: number[] = []
+
+  const stop = startGrabProgressPolling(
+    () => {},
+    {
+      intervalMs: 5000,
+      setIntervalFn: (_callback, intervalMs) => {
+        intervals.push(intervalMs)
+        return 'timer-2'
+      },
+      clearIntervalFn: () => {},
+    },
+  )
+
+  assert.deepEqual(intervals, [5000])
+
+  stop()
+})

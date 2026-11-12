@@ -167,7 +167,6 @@ class ActivityCreateEditTest {
             body.put("description", "一场精彩的星空主题演唱会");
             body.put("artistId", 3001L);
             body.put("venueId", 2001L);
-            body.put("perUserLimit", 4);
             body.put("realNameRequired", true);
             body.put("ticketTransferAllowed", false);
             body.put("seatMapVisibility", "published");

@@ -71,16 +71,15 @@ class TicketSalesInternalCoverageTest {
             TicketSalesQuoteResponse r = svc().quote(qr(1L,100L,1));
             assertEquals("Event", r.getActivityName()); assertNotNull(r.getSessionTime());
         }
-        @Test @DisplayName("IS-005: includes perUserLimit + realNameRequired")
+        @Test @DisplayName("IS-005: enforces实名购票")
         void is005() { sellable();
             when(ttm.selectById(1L)).thenReturn(tt(1L,100L,1,"299"));
             when(sm.selectById(100L)).thenReturn(sess(100L,10L));
-            Activity a = act(10L,"published",1,"X"); a.setPerUserLimit(4); a.setRealNameRequired(true);
+            Activity a = act(10L,"published",1,"X"); a.setRealNameRequired(false);
             when(am.selectById(10L)).thenReturn(a);
             when(vm.selectById(50L)).thenReturn(ven(50L));
             when(ssm.selectList(any())).thenReturn(List.of());
             TicketSalesQuoteResponse r = svc().quote(qr(1L,100L,1));
-            assertEquals(Integer.valueOf(4), r.getPerUserLimit());
             assertEquals(Boolean.TRUE, r.getRealNameRequired());
         }
     }

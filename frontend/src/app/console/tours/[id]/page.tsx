@@ -12,11 +12,10 @@ import type { StationPurchaseDetail, TourAdminDetailVO } from '@/types/api'
 type PublishForm = {
   startTime: string
   endTime: string
-  perUserLimit: string
   scheduleTba: boolean
 }
 
-const emptyPublishForm: PublishForm = { startTime: '', endTime: '', perUserLimit: '', scheduleTba: false }
+const emptyPublishForm: PublishForm = { startTime: '', endTime: '', scheduleTba: false }
 
 function formatPrice(min?: number | null, max?: number | null) {
   if (min == null && max == null) return '未公布'
@@ -113,7 +112,6 @@ export default function TourDetailPage() {
         ...prev[stationId],
         startTime: prev[stationId]?.startTime || '',
         endTime: prev[stationId]?.endTime || '',
-        perUserLimit: prev[stationId]?.perUserLimit || '',
         scheduleTba: prev[stationId]?.scheduleTba || false,
         [field]: value,
       },
@@ -131,11 +129,6 @@ export default function TourDetailPage() {
       setPublishErrors(prev => ({ ...prev, [stationId]: '请填写城市站发布场次时间' }))
       return
     }
-    const limitText = form.perUserLimit.trim()
-    if (limitText && (!/^\d+$/.test(limitText) || Number(limitText) <= 0)) {
-      setPublishErrors(prev => ({ ...prev, [stationId]: '个人限购张数必须为正整数' }))
-      return
-    }
     setPublishErrors(prev => {
       const next = { ...prev }
       delete next[stationId]
@@ -148,7 +141,6 @@ export default function TourDetailPage() {
         scheduleTba: form.scheduleTba,
         startTime: form.scheduleTba ? null : form.startTime,
         endTime: form.scheduleTba ? null : form.endTime,
-        perUserLimit: limitText ? Number(limitText) : null,
       })
       const nextDetail = await getAdminTourDetail(user.userId, tourId)
       setDetail(nextDetail)
@@ -331,11 +323,6 @@ export default function TourDetailPage() {
               结束时间 *
               <input type="datetime-local" value={activePublishForm.endTime} disabled={activePublishForm.scheduleTba} onChange={event => updatePublishForm(publishTarget.station.id, 'endTime', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5]" />
             </label>
-            <label className="block text-[13px] text-[#666]">
-              个人限购
-              <input type="number" min={1} value={activePublishForm.perUserLimit} onChange={event => updatePublishForm(publishTarget.station.id, 'perUserLimit', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="留空不限购" />
-            </label>
-            <p className="text-[12px] text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</p>
             {activePublishError && <div className="rounded-lg bg-[#fff0f3] px-3 py-2 text-[13px] text-[#ff4d4f]">{activePublishError}</div>}
           </div>
         ) : null}

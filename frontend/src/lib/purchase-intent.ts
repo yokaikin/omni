@@ -105,13 +105,6 @@ export function getPurchaseQuantityMax(input: {
   return remainStock != null && remainStock > 0 ? remainStock : 1
 }
 
-export function getWaitlistQuantityMax(perUserLimit: number | null | undefined): number {
-  if (typeof perUserLimit === 'number' && Number.isInteger(perUserLimit) && perUserLimit > 0) {
-    return perUserLimit
-  }
-  return 6
-}
-
 export function shouldResetGrabIdempotencyForStatus(status: string | null | undefined) {
   return Boolean(status && TERMINAL_STATUSES_WITHOUT_ORDER.has(status))
 }

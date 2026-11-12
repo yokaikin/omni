@@ -4,9 +4,12 @@ import com.omni.common.result.Result;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
 import com.omni.notification.controller.NotificationController;
+import com.omni.notification.dto.DirectChannelSendResult;
 import com.omni.notification.dto.InternalNotificationRequest;
 import com.omni.notification.entity.Notification;
 import com.omni.notification.mapper.NotificationMapper;
+import com.omni.notification.sms.SmsSendResult;
+import com.omni.notification.email.EmailSendResult;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -27,6 +30,7 @@ import static org.mockito.Mockito.*;
 class NotificationServiceFullTest {
 
     @Mock NotificationMapper mapper;
+    @Mock NotificationChannelService channelService;
     NotificationService svc;
     NotificationController ctl;
 
@@ -34,7 +38,7 @@ class NotificationServiceFullTest {
     static final String TOKEN = "test-internal-token";
 
     @BeforeEach void setup() {
-        svc = new NotificationService(mapper);
+        svc = new NotificationService(mapper, channelService);
         ctl = new NotificationController(svc, mock(NotificationEventService.class), TOKEN, JWT_SECRET);
     }
 
@@ -103,21 +107,34 @@ class NotificationServiceFullTest {
     // ===== 3.2 SMS (NF-007~010) =====
     @Nested @DisplayName("3.2 SMS Notification")
     class SmsTests {
-        @Test @DisplayName("NF-007: send SMS → 200")
+        @Test @DisplayName("NF-007: send SMS → 200, 记录先写入待发送再更新为已发送")
         void nf007() {
             enableDirectChannel();
-            Result<Void> r = ctl.sendSms(jwt(2004L), Map.of("content", "您的验证码是666666"));
+            int[] insertTimeStatus = new int[1];
+            when(mapper.insert(any())).thenAnswer(inv -> {
+                Notification inserted = inv.getArgument(0, Notification.class);
+                insertTimeStatus[0] = inserted.getStatus();
+                inserted.setId(1L);
+                return 1;
+            });
+            when(channelService.sendSms(any())).thenReturn(new SmsSendResult("SENT", "biz-1", null));
+            Result<Notification> r = ctl.sendSms(jwt(2004L), Map.of("content", "您的验证码是666666"));
             assertEquals(200, r.getCode());
             ArgumentCaptor<Notification> c = ArgumentCaptor.forClass(Notification.class);
             verify(mapper).insert(c.capture());
             assertEquals(2004L, c.getValue().getUserId()); assertEquals("SMS", c.getValue().getType());
+            assertEquals(0, insertTimeStatus[0]); // 写入时：待发送
+            assertEquals(1, r.getData().getStatus()); // 渠道确认后：已发送
+            verify(mapper).updateById(any(Notification.class));
         }
 
         @Test @DisplayName("NF-008: JWT userId cannot be forged")
         void nf008() {
             enableDirectChannel();
+            when(mapper.insert(any())).thenAnswer(inv -> { inv.getArgument(0, Notification.class).setId(2L); return 1; });
+            when(channelService.sendSms(any())).thenReturn(new SmsSendResult("SENT", "biz-2", null));
             // Request body has userId=9999 but JWT has userId=2004
-            Result<Void> r = ctl.sendSms(jwt(2004L), Map.of("userId", 9999L, "content", "test"));
+            Result<Notification> r = ctl.sendSms(jwt(2004L), Map.of("userId", 9999L, "content", "test"));
             assertEquals(200, r.getCode());
             ArgumentCaptor<Notification> c = ArgumentCaptor.forClass(Notification.class);
             verify(mapper).insert(c.capture());
@@ -126,18 +143,42 @@ class NotificationServiceFullTest {
 
         @Test @DisplayName("NF-009: no token → 401")
         void nf009() {
-            Result<Void> r = ctl.sendSms(null, Map.of("content", "test"));
+            Result<Notification> r = ctl.sendSms(null, Map.of("content", "test"));
             assertEquals(401, r.getCode());
             verify(mapper, never()).insert(any());
         }
 
         @Test @DisplayName("NF-010: direct SMS disabled before body parsing")
         void nf010() {
-            Result<Void> r = ctl.sendSms(jwt(2004L), Map.of());
+            Result<Notification> r = ctl.sendSms(jwt(2004L), Map.of());
 
             assertEquals(400, r.getCode());
             assertEquals("当前环境未启用短信直发", r.getMessage());
             verify(mapper, never()).insert(any());
+        }
+
+        @Test @DisplayName("NF-010b: channel send failure → 502, 记录置为发送失败")
+        void nf010b() {
+            enableDirectChannel();
+            when(mapper.insert(any())).thenAnswer(inv -> { inv.getArgument(0, Notification.class).setId(3L); return 1; });
+            when(channelService.sendSms(any())).thenReturn(new SmsSendResult("FAILED", null, "阿里云限流"));
+            Result<Notification> r = ctl.sendSms(jwt(2004L), Map.of("content", "test"));
+            assertEquals(502, r.getCode());
+            ArgumentCaptor<Notification> c = ArgumentCaptor.forClass(Notification.class);
+            verify(mapper).updateById(c.capture());
+            assertEquals(2, c.getValue().getStatus()); // 发送失败
+        }
+
+        @Test @DisplayName("NF-010c: channel skipped → 400, 记录保持待发送")
+        void nf010c() {
+            enableDirectChannel();
+            when(mapper.insert(any())).thenAnswer(inv -> { inv.getArgument(0, Notification.class).setId(4L); return 1; });
+            when(channelService.sendSms(any())).thenReturn(new SmsSendResult("SKIPPED", null, "短信渠道未配置"));
+            Result<Notification> r = ctl.sendSms(jwt(2004L), Map.of("content", "test"));
+            assertEquals(400, r.getCode());
+            ArgumentCaptor<Notification> c = ArgumentCaptor.forClass(Notification.class);
+            verify(mapper).updateById(c.capture());
+            assertEquals(0, c.getValue().getStatus()); // 仍为待发送
         }
     }
 
@@ -147,16 +188,26 @@ class NotificationServiceFullTest {
         @Test @DisplayName("NF-011: send email → 200")
         void nf011() {
             enableDirectChannel();
-            Result<Void> r = ctl.sendEmail(jwt(2004L), Map.of("content", "邮件通知"));
+            int[] insertTimeStatus = new int[1];
+            when(mapper.insert(any())).thenAnswer(inv -> {
+                Notification inserted = inv.getArgument(0, Notification.class);
+                insertTimeStatus[0] = inserted.getStatus();
+                inserted.setId(5L);
+                return 1;
+            });
+            when(channelService.sendEmail(any())).thenReturn(new EmailSendResult("SENT", "msg-1", null));
+            Result<Notification> r = ctl.sendEmail(jwt(2004L), Map.of("content", "邮件通知"));
             assertEquals(200, r.getCode());
             ArgumentCaptor<Notification> c = ArgumentCaptor.forClass(Notification.class);
             verify(mapper).insert(c.capture());
             assertEquals(2004L, c.getValue().getUserId()); assertEquals("EMAIL", c.getValue().getType());
+            assertEquals(0, insertTimeStatus[0]);
+            assertEquals(1, r.getData().getStatus());
         }
 
         @Test @DisplayName("NF-012: same JWT validation as SMS")
         void nf012() {
-            Result<Void> r = ctl.sendEmail(null, Map.of("content", "test"));
+            Result<Notification> r = ctl.sendEmail(null, Map.of("content", "test"));
             assertEquals(401, r.getCode());
         }
     }

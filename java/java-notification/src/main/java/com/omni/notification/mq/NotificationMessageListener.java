@@ -1,6 +1,9 @@
 package com.omni.notification.mq;
 
 import com.omni.common.mq.MqConstants;
+import com.omni.common.mq.MqMetricsRecorder;
+import com.omni.common.mq.MqProperties;
+import com.omni.common.mq.MqRetrySupport;
 import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.common.mq.message.NotificationMessage;
 import com.omni.notification.dto.InternalNotificationRequest;
@@ -14,29 +17,32 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
-import java.util.Map;
-
 @Component
 public class NotificationMessageListener {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationMessageListener.class);
-    private static final long MAX_RETRY_COUNT = 3L;
 
     private final NotificationService notificationService;
     private final NotificationEventService notificationEventService;
     private final RabbitTemplate rabbitTemplate;
+    private final MqProperties mqProperties;
+    private final MqMetricsRecorder metricsRecorder;
 
     public NotificationMessageListener(NotificationService notificationService,
                                        NotificationEventService notificationEventService,
-                                       RabbitTemplate rabbitTemplate) {
+                                       RabbitTemplate rabbitTemplate,
+                                       MqProperties mqProperties,
+                                       MqMetricsRecorder metricsRecorder) {
         this.notificationService = notificationService;
         this.notificationEventService = notificationEventService;
         this.rabbitTemplate = rabbitTemplate;
+        this.mqProperties = mqProperties;
+        this.metricsRecorder = metricsRecorder;
     }
 
     @RabbitListener(queues = MqConstants.Q_NOTIFICATION_SEND)
     public void onNotificationSend(NotificationMessage message, Message rawMessage) {
+        metricsRecorder.recordConsumed(MqConstants.Q_NOTIFICATION_SEND);
         log.info("Received notification message for userId: {}, orderId: {}, type: {}",
                 message.getUserId(), message.getOrderId(), message.getType());
         try {
@@ -52,17 +58,20 @@ public class NotificationMessageListener {
             notificationService.createInternalMessage(request);
         } catch (Exception e) {
             log.error("Failed to process notification message: {}", e.getMessage(), e);
-            if (retryCount(rawMessage, MqConstants.Q_NOTIFICATION_SEND_RETRY) >= MAX_RETRY_COUNT) {
+            if (MqRetrySupport.retryExhausted(rawMessage, MqConstants.Q_NOTIFICATION_SEND_RETRY, mqProperties.getMaxRetryCount())) {
+                metricsRecorder.recordDeadLetter(MqConstants.Q_NOTIFICATION_SEND);
                 rabbitTemplate.convertAndSend(MqConstants.NOTIFICATION_DLX, MqConstants.RK_NOTIFICATION_SEND_DLQ, message);
                 log.warn("通知消息已进入死信队列: userId={}, type={}", message.getUserId(), message.getType());
                 return;
             }
+            metricsRecorder.recordRetry(MqConstants.Q_NOTIFICATION_SEND);
             throw new AmqpRejectAndDontRequeueException("通知消息处理失败，进入重试队列", e);
         }
     }
 
     @RabbitListener(queues = MqConstants.Q_NOTIFICATION_EVENT)
     public void onNotificationEvent(NotificationEventMessage message, Message rawMessage) {
+        metricsRecorder.recordConsumed(MqConstants.Q_NOTIFICATION_EVENT);
         log.info("收到通知事件: eventId={}, userId={}, eventType={}",
                 message.getEventId(), message.getUserId(), message.getEventType());
         try {
@@ -70,40 +79,15 @@ public class NotificationMessageListener {
         } catch (Exception e) {
             log.error("通知事件处理失败: eventId={}, userId={}, eventType={}, message={}",
                     message.getEventId(), message.getUserId(), message.getEventType(), e.getMessage(), e);
-            if (retryCount(rawMessage, MqConstants.Q_NOTIFICATION_EVENT_RETRY) >= MAX_RETRY_COUNT) {
+            if (MqRetrySupport.retryExhausted(rawMessage, MqConstants.Q_NOTIFICATION_EVENT_RETRY, mqProperties.getMaxRetryCount())) {
+                metricsRecorder.recordDeadLetter(MqConstants.Q_NOTIFICATION_EVENT);
                 rabbitTemplate.convertAndSend(MqConstants.NOTIFICATION_DLX, MqConstants.RK_NOTIFICATION_EVENT_DLQ, message);
                 log.warn("通知事件已进入死信队列: eventId={}, userId={}, eventType={}",
                         message.getEventId(), message.getUserId(), message.getEventType());
                 return;
             }
+            metricsRecorder.recordRetry(MqConstants.Q_NOTIFICATION_EVENT);
             throw new AmqpRejectAndDontRequeueException("通知事件处理失败，进入重试队列", e);
         }
-    }
-
-    private long retryCount(Message rawMessage, String retryQueue) {
-        if (rawMessage == null || rawMessage.getMessageProperties() == null) {
-            return 0L;
-        }
-        Object deaths = rawMessage.getMessageProperties().getHeaders().get("x-death");
-        if (!(deaths instanceof List<?>)) {
-            return 0L;
-        }
-        for (Object item : (List<?>) deaths) {
-            if (item instanceof Map<?, ?>) {
-                Map<?, ?> death = (Map<?, ?>) item;
-                if (retryQueue.equals(String.valueOf(death.get("queue")))) {
-                    Object count = death.get("count");
-                    if (count instanceof Number) {
-                        return ((Number) count).longValue();
-                    }
-                    try {
-                        return Long.parseLong(String.valueOf(count));
-                    } catch (NumberFormatException ignored) {
-                        return 0L;
-                    }
-                }
-            }
-        }
-        return 0L;
     }
 }

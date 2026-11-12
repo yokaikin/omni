@@ -4,7 +4,6 @@ import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
 import com.omni.common.result.Result;
 import com.omni.order.dto.CreateOrderRequest;
-import com.omni.order.dto.CreateTeamOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.dto.OrderSeatItemResponse;
@@ -114,25 +113,6 @@ class OrderControllerInternalCreateTest {
     }
 
     @Test
-    void internalTeamCreateUsesExistingOrderServiceWhenTokenValid() {
-        CreateTeamOrderRequest request = new CreateTeamOrderRequest();
-        request.setUserId(2004L);
-        request.setPayerUserId(2004L);
-        request.setSessionId(7L);
-        request.setTicketTypeId(21L);
-        request.setQuantity(1);
-        Order order = new Order();
-        order.setId(16L);
-        when(orderService.createTeamOrderWithLockedSeats(request)).thenReturn(order);
-
-        Result<Order> result = controller.createInternalTeamOrder(request, "test-internal-token");
-
-        assertEquals(200, result.getCode());
-        assertEquals(order, result.getData());
-        verify(orderService).createTeamOrderWithLockedSeats(request);
-    }
-
-    @Test
     void internalOrderSeatsReturnsLockedAndSoldSeatsForAssignment() {
         OrderSeatItemResponse locked = new OrderSeatItemResponse();
         locked.setOrderSeatId(1001L);
@@ -234,24 +214,6 @@ class OrderControllerInternalCreateTest {
         assertEquals("系统繁忙，请稍后重试", result.getMessage());
         assertNull(result.getData());
         verify(orderService, never()).createOrderWithSeats(any());
-    }
-
-    @Test
-    void internalTeamCreateBlockHandlerReturnsBusyResponse() {
-        CreateTeamOrderRequest request = new CreateTeamOrderRequest();
-        request.setUserId(2004L);
-        request.setPayerUserId(2004L);
-        request.setSessionId(7L);
-        request.setTicketTypeId(21L);
-        request.setQuantity(1);
-        BlockException exception = new FlowException("order-internal-team-create-with-locked-seats");
-
-        Result<Order> result = controller.createInternalTeamOrderBlocked(request, "test-internal-token", exception);
-
-        assertEquals(429, result.getCode());
-        assertEquals("系统繁忙，请稍后重试", result.getMessage());
-        assertNull(result.getData());
-        verify(orderService, never()).createTeamOrderWithLockedSeats(any());
     }
 
     @Test

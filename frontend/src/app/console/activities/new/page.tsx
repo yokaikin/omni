@@ -50,8 +50,6 @@ function NewActivityPageContent() {
   const [poster, setPoster] = useState('')
   const [activityMode, setActivityMode] = useState<ActivityMode>('single')
   const [seatMapVisibility, setSeatMapVisibility] = useState<SeatMapVisibility>('hidden')
-  const [perUserLimit, setPerUserLimit] = useState('')
-  const [realNameRequired, setRealNameRequired] = useState(false)
   const [ticketTransferAllowed, setTicketTransferAllowed] = useState(true)
   const [refundFullDaysBefore, setRefundFullDaysBefore] = useState('30')
   const [refundPartialDaysBefore, setRefundPartialDaysBefore] = useState('7')
@@ -171,11 +169,6 @@ function NewActivityPageContent() {
       await globalAlert('当前账号没有巡演管理权限')
       return
     }
-    const limitText = perUserLimit.trim()
-    if (limitText && (!/^\d+$/.test(limitText) || Number(limitText) <= 0)) {
-      await globalAlert('个人限购张数必须为正整数')
-      return
-    }
     const refundFullDays = Number(refundFullDaysBefore)
     const refundPartialDays = Number(refundPartialDaysBefore)
     const refundRate = Number(refundPartialRate)
@@ -267,8 +260,7 @@ function NewActivityPageContent() {
         description,
         poster,
         seatMapVisibility,
-        perUserLimit: limitText ? Number(limitText) : null,
-        realNameRequired,
+        realNameRequired: true,
         ticketTransferAllowed,
         refundFullDaysBefore: Number(refundFullDaysBefore),
         refundPartialDaysBefore: Number(refundPartialDaysBefore),
@@ -420,20 +412,9 @@ function NewActivityPageContent() {
                 hint="支持 JPG、PNG、WEBP、GIF，上传后自动写入海报地址。"
               />
             </div>
-            <div className="mb-4">
-              <label className="block text-[13px] font-medium text-[#333] mb-1.5">个人限购</label>
-              <input type="number" min={1} value={perUserLimit} onChange={e => setPerUserLimit(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="留空表示不限购，例如 2" />
-              <p className="mt-1 text-[12px] text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</p>
-            </div>
             {activityMode === 'single' && (
               <div className="mb-4 grid gap-3">
-                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
-                  <input type="checkbox" checked={realNameRequired} onChange={e => setRealNameRequired(e.target.checked)} className="mt-0.5 accent-[#ff1268]" />
-                  <span>
-                    <span className="font-medium">实名制购票</span>
-                    <span className="mt-1 block text-[#999]">开启后，用户下单和候补时需要选择对应数量的实名观演人。</span>
-                  </span>
-                </label>
+                <div className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">实名制购票：平台活动默认开启，每张票均需绑定实名观演人。</div>
                 <div className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
                   <div className="font-medium">退票规则</div>
                   <div className="mt-2 grid gap-2 sm:grid-cols-3">
@@ -539,7 +520,7 @@ function NewActivityPageContent() {
               <div className="grid gap-1 text-[13px] text-[#666] sm:grid-cols-2">
                 <div>活动名称：{name.trim() || '未填写'}</div>
                 <div>活动类型：{activityMode === 'tour' ? '巡演活动' : '普通活动'}</div>
-                {activityMode === 'single' && <div>实名制购票：{realNameRequired ? '开启' : '关闭'}</div>}
+                {activityMode === 'single' && <div>实名制购票：开启（每张票实名）</div>}
                 {activityMode === 'single' && <div>电子票转赠：{ticketTransferAllowed ? '允许' : '禁止'}</div>}
                 {activityMode === 'tour' ? (
                   <>

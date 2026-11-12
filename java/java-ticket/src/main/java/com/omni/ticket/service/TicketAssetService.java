@@ -1,6 +1,8 @@
 package com.omni.ticket.service;
 
 import com.omni.common.result.ResultCode;
+import com.omni.common.storage.AssetStorageService;
+import com.omni.common.storage.StoredFile;
 import com.omni.common.util.ProjectPathUtil;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.AssetUploadResponse;
@@ -13,12 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.util.Locale;
 import java.util.Set;
@@ -33,11 +30,14 @@ public class TicketAssetService {
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of("image/jpeg", "image/png", "image/webp", "image/gif");
 
     private final TicketAssetMapper ticketAssetMapper;
+    private final AssetStorageService assetStorageService;
     private final Path uploadRoot;
 
     public TicketAssetService(TicketAssetMapper ticketAssetMapper,
+                              AssetStorageService assetStorageService,
                               @Value("${omni.upload.root:${OMNI_UPLOAD_ROOT:}}") String uploadRoot) {
         this.ticketAssetMapper = ticketAssetMapper;
+        this.assetStorageService = assetStorageService;
         this.uploadRoot = ProjectPathUtil.resolvePublicUploadRoot(uploadRoot);
     }
 
@@ -59,15 +59,8 @@ public class TicketAssetService {
         String extension = extensionFor(contentType);
         String storedName = UUID.randomUUID() + "." + extension;
         String relativePath = String.format(Locale.ROOT, "ticket/%s/%04d/%02d/%s", bizType, now.getYear(), now.getMonthValue(), storedName);
-        Path target = uploadRoot.resolve(relativePath).normalize();
 
-        String sha256;
-        try {
-            Files.createDirectories(target.getParent());
-            sha256 = saveFileAndSha256(file, target);
-        } catch (IOException e) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "资产文件保存失败");
-        }
+        StoredFile stored = assetStorageService.store(uploadRoot, "", relativePath, file);
 
         String publicUrl = "/uploads/" + relativePath.replace('\\', '/');
         try {
@@ -80,12 +73,12 @@ public class TicketAssetService {
             asset.setPublicUrl(publicUrl);
             asset.setMimeType(contentType);
             asset.setSizeBytes(file.getSize());
-            asset.setSha256(sha256);
+            asset.setSha256(stored.getSha256());
             asset.setStatus(1);
             ticketAssetMapper.insert(asset);
             return toAssetUploadResponse(asset);
         } catch (RuntimeException e) {
-            deleteQuietly(target);
+            assetStorageService.delete(uploadRoot, "", relativePath.replace('\\', '/'));
             throw e;
         }
     }
@@ -169,20 +162,6 @@ public class TicketAssetService {
         return true;
     }
 
-    private String saveFileAndSha256(MultipartFile file, Path target) throws IOException {
-        MessageDigest digest = newSha256Digest();
-        byte[] buffer = new byte[8192];
-        try (InputStream inputStream = file.getInputStream();
-             OutputStream outputStream = Files.newOutputStream(target, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
-            int read;
-            while ((read = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, read);
-                digest.update(buffer, 0, read);
-            }
-        }
-        return hex(digest.digest());
-    }
-
     private String extensionFor(String contentType) {
         if ("image/jpeg".equals(contentType)) {
             return "jpg";
@@ -197,28 +176,5 @@ public class TicketAssetService {
             return "gif";
         }
         throw new BusinessException(ResultCode.BAD_REQUEST, "该资产类型仅支持 JPG、PNG、WEBP 或 GIF 图片");
-    }
-
-    private MessageDigest newSha256Digest() {
-        try {
-            return MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "文件摘要计算失败");
-        }
-    }
-
-    private String hex(byte[] hash) {
-        StringBuilder builder = new StringBuilder(hash.length * 2);
-        for (byte value : hash) {
-            builder.append(String.format("%02x", value));
-        }
-        return builder.toString();
-    }
-
-    private void deleteQuietly(Path target) {
-        try {
-            Files.deleteIfExists(target);
-        } catch (IOException ignored) {
-        }
     }
 }

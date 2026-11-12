@@ -273,33 +273,4 @@ describe('GrabQueueService', () => {
     expect(args).toEqual(['101']);
     expect(redis.srem).not.toHaveBeenCalled();
   });
-
-  it('acquires a team trigger lock with SET NX EX', async () => {
-    const redis: any = {
-      eval: jest.fn().mockResolvedValue('OK'),
-    };
-    const service = new GrabQueueService(redis);
-
-    await expect(service.acquireTeamTriggerLock(1, 20, 30, 'GRAB-1', 60)).resolves.toBe(true);
-
-    const [script, keys, args] = redis.eval.mock.calls[0];
-    expect(script).toContain("redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', tonumber(ARGV[2]))");
-    expect(keys).toEqual(['grab:team:1:20:30']);
-    expect(args).toEqual(['GRAB-1', '60']);
-  });
-
-  it('releases a team trigger lock only when owned by the same request id', async () => {
-    const redis: any = {
-      eval: jest.fn().mockResolvedValue(1),
-    };
-    const service = new GrabQueueService(redis);
-
-    await service.releaseTeamTriggerLock(1, 20, 30, 'GRAB-1');
-
-    const [script, keys, args] = redis.eval.mock.calls[0];
-    expect(script).toContain("redis.call('GET', KEYS[1]) == ARGV[1]");
-    expect(script).toContain("redis.call('DEL', KEYS[1])");
-    expect(keys).toEqual(['grab:team:1:20:30']);
-    expect(args).toEqual(['GRAB-1']);
-  });
 });

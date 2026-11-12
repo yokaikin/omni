@@ -1,6 +1,8 @@
 package com.omni.user.service;
 
 import com.omni.common.result.ResultCode;
+import com.omni.common.storage.AssetStorageService;
+import com.omni.common.storage.StoredFile;
 import com.omni.common.util.ProjectPathUtil;
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.AssetUploadResponse;
@@ -16,12 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.util.Locale;
 import java.util.Set;
@@ -36,13 +33,16 @@ public class UserAssetService {
 
     private final UserAssetMapper userAssetMapper;
     private final UserMapper userMapper;
+    private final AssetStorageService assetStorageService;
     private final Path uploadRoot;
 
     public UserAssetService(UserAssetMapper userAssetMapper,
                             UserMapper userMapper,
+                            AssetStorageService assetStorageService,
                             @Value("${omni.upload.root:${OMNI_UPLOAD_ROOT:}}") String uploadRoot) {
         this.userAssetMapper = userAssetMapper;
         this.userMapper = userMapper;
+        this.assetStorageService = assetStorageService;
         this.uploadRoot = ProjectPathUtil.resolvePublicUploadRoot(uploadRoot);
     }
 
@@ -72,15 +72,8 @@ public class UserAssetService {
         String extension = extensionFor(contentType);
         String storedName = UUID.randomUUID() + "." + extension;
         String relativePath = String.format(Locale.ROOT, "user/avatar/%04d/%02d/%s", now.getYear(), now.getMonthValue(), storedName);
-        Path target = uploadRoot.resolve(relativePath).normalize();
 
-        String sha256;
-        try {
-            Files.createDirectories(target.getParent());
-            sha256 = saveFileAndSha256(file, target);
-        } catch (IOException e) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "头像文件保存失败");
-        }
+        StoredFile stored = assetStorageService.store(uploadRoot, "", relativePath, file);
 
         String publicUrl = "/uploads/" + relativePath.replace('\\', '/');
         try {
@@ -93,7 +86,7 @@ public class UserAssetService {
             asset.setPublicUrl(publicUrl);
             asset.setMimeType(contentType);
             asset.setSizeBytes(file.getSize());
-            asset.setSha256(sha256);
+            asset.setSha256(stored.getSha256());
             asset.setStatus(1);
             userAssetMapper.insert(asset);
 
@@ -101,7 +94,7 @@ public class UserAssetService {
             userMapper.updateById(user);
             return toUserInfoResponse(user);
         } catch (RuntimeException e) {
-            deleteQuietly(target);
+            assetStorageService.delete(uploadRoot, "", relativePath.replace('\\', '/'));
             throw e;
         }
     }
@@ -132,14 +125,8 @@ public class UserAssetService {
         String storedName = UUID.randomUUID() + "." + extension;
         String relativePath = String.format(Locale.ROOT, "user/organizer/%04d/%02d/%s",
                 now.getYear(), now.getMonthValue(), storedName);
-        Path target = uploadRoot.resolve(relativePath).normalize();
-        String sha256;
-        try {
-            Files.createDirectories(target.getParent());
-            sha256 = saveFileAndSha256(file, target);
-        } catch (IOException e) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "材料文件保存失败");
-        }
+
+        StoredFile stored = assetStorageService.store(uploadRoot, "", relativePath, file);
 
         try {
             UserAsset asset = new UserAsset();
@@ -151,12 +138,12 @@ public class UserAssetService {
             asset.setPublicUrl("/uploads/" + relativePath.replace('\\', '/'));
             asset.setMimeType(contentType);
             asset.setSizeBytes(file.getSize());
-            asset.setSha256(sha256);
+            asset.setSha256(stored.getSha256());
             asset.setStatus(1);
             userAssetMapper.insert(asset);
             return asset;
         } catch (RuntimeException e) {
-            deleteQuietly(target);
+            assetStorageService.delete(uploadRoot, "", relativePath.replace('\\', '/'));
             throw e;
         }
     }
@@ -172,7 +159,7 @@ public class UserAssetService {
         }
         userAssetMapper.deleteById(asset.getId());
         if (asset.getRelativePath() != null) {
-            deleteQuietly(uploadRoot.resolve(asset.getRelativePath()).normalize());
+            assetStorageService.delete(uploadRoot, "", asset.getRelativePath());
         }
     }
 
@@ -244,20 +231,6 @@ public class UserAssetService {
         return true;
     }
 
-    private String saveFileAndSha256(MultipartFile file, Path target) throws IOException {
-        MessageDigest digest = newSha256Digest();
-        byte[] buffer = new byte[8192];
-        try (InputStream inputStream = file.getInputStream();
-             OutputStream outputStream = Files.newOutputStream(target, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
-            int read;
-            while ((read = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, read);
-                digest.update(buffer, 0, read);
-            }
-        }
-        return hex(digest.digest());
-    }
-
     private String extensionFor(String contentType) {
         if ("image/jpeg".equals(contentType)) {
             return "jpg";
@@ -269,29 +242,6 @@ public class UserAssetService {
             return "webp";
         }
         return "gif";
-    }
-
-    private MessageDigest newSha256Digest() {
-        try {
-            return MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "文件摘要计算失败");
-        }
-    }
-
-    private String hex(byte[] hash) {
-        StringBuilder builder = new StringBuilder(hash.length * 2);
-        for (byte value : hash) {
-            builder.append(String.format("%02x", value));
-        }
-        return builder.toString();
-    }
-
-    private void deleteQuietly(Path target) {
-        try {
-            Files.deleteIfExists(target);
-        } catch (IOException ignored) {
-        }
     }
 
     private UserInfoResponse toUserInfoResponse(User user) {

@@ -1,4 +1,4 @@
-server:
+﻿server:
   port: 8085
 
 spring:
@@ -6,7 +6,7 @@ spring:
     name: java-notification
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/omni_ticket
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/omni_notification
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:123456}
   cloud:
@@ -28,6 +28,10 @@ spring:
     username: ${RABBITMQ_USER:admin}
     password: ${RABBITMQ_PASSWORD:123456}
     virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
 
 mybatis-plus:
   configuration:
@@ -36,6 +40,56 @@ mybatis-plus:
     db-config:
       id-type: auto
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
 omni:
   mq:
     enabled: true
+  notification:
+    direct-channel:
+      enabled: ${OMNI_NOTIFICATION_DIRECT_CHANNEL_ENABLED:false}
+    sms:
+      # disabled / aliyun；aliyun 需配置 AccessKey/签名，缺失时启动报错
+      provider: ${OMNI_NOTIFICATION_SMS_PROVIDER:disabled}
+      aliyun:
+        endpoint: ${ALIYUN_SMS_ENDPOINT:dysmsapi.aliyuncs.com}
+        access-key-id: ${ALIYUN_SMS_ACCESS_KEY_ID:}
+        access-key-secret: ${ALIYUN_SMS_ACCESS_KEY_SECRET:}
+        sign-name: ${ALIYUN_SMS_SIGN_NAME:}
+    email:
+      # disabled / smtp；smtp 需配置 spring.mail.* 与发件人
+      provider: ${OMNI_NOTIFICATION_EMAIL_PROVIDER:disabled}
+      smtp:
+        from: ${OMNI_NOTIFICATION_EMAIL_FROM:}
+    delivery:
+      retry:
+        max-attempts: ${OMNI_NOTIFICATION_DELIVERY_RETRY_MAX_ATTEMPTS:3}
+        scan-interval-ms: ${OMNI_NOTIFICATION_DELIVERY_RETRY_SCAN_INTERVAL_MS:60000}
+  object-storage:
+    # disabled / minio
+    provider: ${OMNI_OBJECT_STORAGE_PROVIDER:disabled}
+    minio:
+      endpoint: ${OMNI_OBJECT_STORAGE_MINIO_ENDPOINT:}
+      access-key: ${OMNI_OBJECT_STORAGE_MINIO_ACCESS_KEY:}
+      secret-key: ${OMNI_OBJECT_STORAGE_MINIO_SECRET_KEY:}
+      bucket: ${OMNI_OBJECT_STORAGE_MINIO_BUCKET:omni-notification}
+
+spring.mail:
+  host: ${SMTP_HOST:}
+  port: ${SMTP_PORT:465}
+  username: ${SMTP_USERNAME:}
+  password: ${SMTP_PASSWORD:}
+  default-encoding: UTF-8
+  properties:
+    mail:
+      smtp:
+        auth: true
+        ssl:
+          enable: ${SMTP_SSL_ENABLE:true}

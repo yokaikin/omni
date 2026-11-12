@@ -10,7 +10,6 @@ interface TestIds {
   sessionId: number;
   requestId: string;
   secondRequestId: string;
-  teamId: number;
   ticketTypeId: number;
   userId: number;
   seatId: number;
@@ -108,18 +107,6 @@ describeRedisIntegration('grab redis integration', () => {
     await expect(queue.getActiveSessions()).resolves.toContain(ids.sessionId);
   });
 
-  it('uses a real SET NX team trigger lock and releases only the owner', async () => {
-    await expect(queue.acquireTeamTriggerLock(ids.teamId, ids.sessionId, ids.ticketTypeId, ids.requestId, 60)).resolves.toBe(true);
-    await expect(queue.acquireTeamTriggerLock(ids.teamId, ids.sessionId, ids.ticketTypeId, ids.secondRequestId, 60)).resolves.toBe(false);
-    await expect(redis.get(teamTriggerLockKey(ids))).resolves.toBe(ids.requestId);
-
-    await queue.releaseTeamTriggerLock(ids.teamId, ids.sessionId, ids.ticketTypeId, ids.secondRequestId);
-    await expect(redis.get(teamTriggerLockKey(ids))).resolves.toBe(ids.requestId);
-
-    await queue.releaseTeamTriggerLock(ids.teamId, ids.sessionId, ids.ticketTypeId, ids.requestId);
-    await expect(redis.get(teamTriggerLockKey(ids))).resolves.toBeNull();
-  });
-
   it('restores admission stock once from the durable marker after short hold keys disappear', async () => {
     await redis.set(stockKey(ids), '3');
 
@@ -172,7 +159,6 @@ describeRedisIntegration('grab redis integration', () => {
       processedSeqKey(target.sessionId),
       requestKey(target.requestId),
       requestKey(target.secondRequestId),
-      teamTriggerLockKey(target),
       stockKey(target),
       idempotencyKey(target),
       userHoldKey(target),
@@ -192,7 +178,6 @@ function createIds(): TestIds {
     sessionId: base,
     requestId: `it-${testRunId}-${sequence}-a`,
     secondRequestId: `it-${testRunId}-${sequence}-b`,
-    teamId: base + 10_000,
     ticketTypeId: base + 20_000,
     userId: base + 30_000,
     seatId: base + 40_000,
@@ -222,10 +207,6 @@ function requestKey(requestId: string): string {
 
 function activeSessionsKey(): string {
   return 'grab:active-sessions';
-}
-
-function teamTriggerLockKey(ids: Pick<TestIds, 'teamId' | 'sessionId' | 'ticketTypeId'>): string {
-  return `grab:team:${ids.teamId}:${ids.sessionId}:${ids.ticketTypeId}`;
 }
 
 function stockKey(ids: Pick<TestIds, 'sessionId' | 'ticketTypeId'>): string {

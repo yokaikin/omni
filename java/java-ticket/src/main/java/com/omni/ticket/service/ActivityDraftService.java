@@ -75,7 +75,6 @@ public class ActivityDraftService {
         activity.setPoster(textOrNull(body.get("poster")));
         activity.setPublishStatus("draft");
         activity.setSeatMapVisibility(seatMapVisibility);
-        activity.setPerUserLimit(parsePerUserLimit(body.get("perUserLimit")));
         int fullDaysBefore = parsePositiveInteger(body.get("refundFullDaysBefore"), 30, "全额退款提前天数");
         int partialDaysBefore = parsePositiveInteger(body.get("refundPartialDaysBefore"), 7, "折扣退款提前天数");
         int partialRate = parsePositiveInteger(body.get("refundPartialRate"), 80, "折扣退款比例");
@@ -156,22 +155,6 @@ public class ActivityDraftService {
             return visibility;
         }
         return null;
-    }
-
-    private Integer parsePerUserLimit(Object value) {
-        String text = optionalText(value);
-        if (text == null) {
-            return null;
-        }
-        try {
-            int parsed = Integer.parseInt(text);
-            if (parsed <= 0) {
-                throw new BusinessException(400, "个人限购张数必须大于0");
-            }
-            return parsed;
-        } catch (NumberFormatException e) {
-            throw new BusinessException(400, "个人限购张数必须为数字");
-        }
     }
 
     private int parsePositiveInteger(Object value, int defaultValue, String label) {

@@ -1,6 +1,9 @@
 package com.omni.ticket.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.ResultCode;
+import com.omni.common.storage.AssetStorageService;
+import com.omni.common.storage.StoredFile;
 import com.omni.common.util.ProjectPathUtil;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.InternalUserRefResponse;
@@ -18,14 +21,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -34,11 +33,13 @@ import java.util.UUID;
 public class PrivateAssetService {
 
     private static final String SERVICE_NAME = "ticket";
+    private static final String OBJECT_KEY_PREFIX = "private/ticket";
     private static final String BIZ_TYPE_VENUE_PROOF = "venue-proof";
     private static final Set<String> VENUE_MATERIAL_BIZ_TYPES = Set.of(
             "venue-proof", "venue-fire-safety", "venue-lease-agreement");
     private static final String STATUS_PENDING = "pending";
     private static final String STATUS_BOUND = "bound";
+    private static final String STATUS_DELETED = "deleted";
     private static final long MAX_FILE_BYTES = 20L * 1024L * 1024L;
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "application/pdf", "image/jpeg", "image/png", "image/webp");
@@ -46,15 +47,18 @@ public class PrivateAssetService {
     private final PrivateAssetMapper privateAssetMapper;
     private final VenueApplicationMapper venueApplicationMapper;
     private final UserAccessService userAccessService;
+    private final AssetStorageService assetStorageService;
     private final Path privateRoot;
 
     public PrivateAssetService(PrivateAssetMapper privateAssetMapper,
                                VenueApplicationMapper venueApplicationMapper,
                                UserAccessService userAccessService,
+                               AssetStorageService assetStorageService,
                                @Value("${omni.private-asset.root:${OMNI_PRIVATE_ASSET_ROOT:}}") String privateRoot) {
         this.privateAssetMapper = privateAssetMapper;
         this.venueApplicationMapper = venueApplicationMapper;
         this.userAccessService = userAccessService;
+        this.assetStorageService = assetStorageService;
         this.privateRoot = ProjectPathUtil.resolvePrivateUploadRoot(privateRoot, SERVICE_NAME);
     }
 
@@ -74,20 +78,8 @@ public class PrivateAssetService {
         String storedName = UUID.randomUUID() + "." + extensionFor(contentType);
         String relativePath = String.format(Locale.ROOT, "%s/%04d/%02d/%s",
                 bizType, now.getYear(), now.getMonthValue(), storedName);
-        Path target = privateRoot.resolve(relativePath).normalize();
-        assertInsidePrivateRoot(target);
 
-        String sha256;
-        try {
-            Files.createDirectories(target.getParent());
-            sha256 = saveFileAndSha256(file, target);
-        } catch (IOException e) {
-            deleteQuietly(target);
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "私有资产文件保存失败");
-        } catch (RuntimeException e) {
-            deleteQuietly(target);
-            throw e;
-        }
+        StoredFile stored = assetStorageService.store(privateRoot, OBJECT_KEY_PREFIX, relativePath, file);
 
         try {
             PrivateAsset asset = new PrivateAsset();
@@ -99,13 +91,13 @@ public class PrivateAssetService {
             asset.setRelativePath(relativePath.replace('\\', '/'));
             asset.setContentType(contentType);
             asset.setFileSize(file.getSize());
-            asset.setSha256(sha256);
+            asset.setSha256(stored.getSha256());
             asset.setStatus(STATUS_PENDING);
             asset.setCreateTime(LocalDateTime.now());
             privateAssetMapper.insert(asset);
             return PrivateAssetResponse.from(asset);
         } catch (RuntimeException e) {
-            deleteQuietly(target);
+            assetStorageService.delete(privateRoot, OBJECT_KEY_PREFIX, relativePath.replace('\\', '/'));
             throw e;
         }
     }
@@ -153,12 +145,58 @@ public class PrivateAssetService {
         InternalUserRefResponse user = userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage", "tour.manage");
         PrivateAsset asset = requireAsset(assetId);
         verifyDownloadPermission(asset, user);
-        Path path = privateRoot.resolve(asset.getRelativePath()).normalize();
-        assertInsidePrivateRoot(path);
-        if (!Files.exists(path) || !Files.isRegularFile(path)) {
+        InputStream inputStream = openAssetStream(asset);
+        return new PrivateAssetDownload(inputStream, asset.getOriginalFilename(), asset.getContentType(), asset.getFileSize());
+    }
+
+    /**
+     * 生成短期有效的签名下载地址；对象存储未启用时抛出业务异常。
+     */
+    public String presignedDownloadUrl(Long assetId, Long userId, int expirySeconds) {
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage", "tour.manage");
+        PrivateAsset asset = requireAsset(assetId);
+        verifyDownloadPermission(asset, user);
+        String url = assetStorageService.presignedGetUrl(OBJECT_KEY_PREFIX, asset.getRelativePath(), expirySeconds);
+        if (url == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "对象存储未启用，无法生成签名下载地址");
+        }
+        return url;
+    }
+
+    /**
+     * 清理超期未绑定的 pending 私有资产：软删除记录并删除物理文件。
+     *
+     * @return 清理条数
+     */
+    @Transactional
+    public int cleanupExpiredPendingAssets(int retentionDays) {
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(Math.max(1, retentionDays));
+        List<PrivateAsset> expired = privateAssetMapper.selectList(new LambdaQueryWrapper<PrivateAsset>()
+                .eq(PrivateAsset::getStatus, STATUS_PENDING)
+                .lt(PrivateAsset::getCreateTime, cutoff)
+                .last("LIMIT 200"));
+        int cleaned = 0;
+        for (PrivateAsset asset : expired) {
+            asset.setStatus(STATUS_DELETED);
+            asset.setDeletedAt(LocalDateTime.now());
+            privateAssetMapper.updateById(asset);
+            if (asset.getRelativePath() != null) {
+                assetStorageService.delete(privateRoot, OBJECT_KEY_PREFIX, asset.getRelativePath());
+            }
+            cleaned++;
+        }
+        return cleaned;
+    }
+
+    private InputStream openAssetStream(PrivateAsset asset) {
+        if (asset.getRelativePath() == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "私有资产文件不存在");
         }
-        return new PrivateAssetDownload(path, asset.getOriginalFilename(), asset.getContentType(), asset.getFileSize());
+        InputStream inputStream = assetStorageService.open(privateRoot, OBJECT_KEY_PREFIX, asset.getRelativePath());
+        if (inputStream == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "私有资产文件不存在");
+        }
+        return inputStream;
     }
 
     private void validateFile(MultipartFile file) {
@@ -208,7 +246,7 @@ public class PrivateAssetService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "私有资产ID不能为空");
         }
         PrivateAsset asset = privateAssetMapper.selectById(assetId);
-        if (asset == null || asset.getDeletedAt() != null || "deleted".equals(asset.getStatus())) {
+        if (asset == null || asset.getDeletedAt() != null || STATUS_DELETED.equals(asset.getStatus())) {
             throw new BusinessException(ResultCode.NOT_FOUND, "私有资产不存在");
         }
         return asset;
@@ -227,12 +265,6 @@ public class PrivateAssetService {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权下载该私有资产");
         }
         return application;
-    }
-
-    private void assertInsidePrivateRoot(Path path) {
-        if (!path.normalize().startsWith(privateRoot.normalize())) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "私有资产路径不合法");
-        }
     }
 
     private void validateExtension(String originalFilename, String contentType) {
@@ -314,25 +346,6 @@ public class PrivateAssetService {
         return true;
     }
 
-    private String saveFileAndSha256(MultipartFile file, Path target) throws IOException {
-        MessageDigest digest = newSha256Digest();
-        byte[] buffer = new byte[8192];
-        long total = 0L;
-        try (InputStream inputStream = file.getInputStream();
-             OutputStream outputStream = Files.newOutputStream(target, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
-            int read;
-            while ((read = inputStream.read(buffer)) != -1) {
-                total += read;
-                if (total > MAX_FILE_BYTES) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST, "场地证明文件不能超过20MB");
-                }
-                outputStream.write(buffer, 0, read);
-                digest.update(buffer, 0, read);
-            }
-        }
-        return hex(digest.digest());
-    }
-
     private String extensionFor(String contentType) {
         if ("application/pdf".equals(contentType)) {
             return "pdf";
@@ -347,28 +360,5 @@ public class PrivateAssetService {
             return "webp";
         }
         throw new BusinessException(ResultCode.BAD_REQUEST, "场地证明仅支持 PDF、JPG、PNG 或 WEBP 文件");
-    }
-
-    private MessageDigest newSha256Digest() {
-        try {
-            return MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "文件摘要计算失败");
-        }
-    }
-
-    private String hex(byte[] hash) {
-        StringBuilder builder = new StringBuilder(hash.length * 2);
-        for (byte value : hash) {
-            builder.append(String.format("%02x", value));
-        }
-        return builder.toString();
-    }
-
-    private void deleteQuietly(Path target) {
-        try {
-            Files.deleteIfExists(target);
-        } catch (IOException ignored) {
-        }
     }
 }

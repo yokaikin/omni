@@ -1,6 +1,8 @@
 package com.omni.notification.mq;
 
 import com.omni.common.mq.MqConstants;
+import com.omni.common.mq.MqMetricsRecorder;
+import com.omni.common.mq.MqProperties;
 import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.notification.service.NotificationEventService;
 import com.omni.notification.service.NotificationService;
@@ -26,8 +28,10 @@ class NotificationMessageListenerTest {
     private final NotificationService notificationService = mock(NotificationService.class);
     private final NotificationEventService notificationEventService = mock(NotificationEventService.class);
     private final RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+    private final MqProperties mqProperties = new MqProperties();
+    private final MqMetricsRecorder metricsRecorder = mock(MqMetricsRecorder.class);
     private final NotificationMessageListener listener =
-            new NotificationMessageListener(notificationService, notificationEventService, rabbitTemplate);
+            new NotificationMessageListener(notificationService, notificationEventService, rabbitTemplate, mqProperties, metricsRecorder);
 
     @Test
     void onNotificationEventDelegatesToEventService() {

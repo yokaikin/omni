@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
+import com.omni.common.util.LogMaskUtil;
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.ChangePhoneRequest;
 import com.omni.user.dto.ChangePasswordRequest;
@@ -14,6 +15,7 @@ import com.omni.user.dto.RegisterRequest;
 import com.omni.user.dto.ResetPasswordRequest;
 import com.omni.user.dto.UpdateProfileRequest;
 import com.omni.user.dto.InternalUserRefResponse;
+import com.omni.user.dto.InternalUserContactResponse;
 import com.omni.user.dto.UserInfoResponse;
 import com.omni.user.entity.User;
 import com.omni.user.mapper.UserMapper;
@@ -77,7 +79,7 @@ public class UserService {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         userMapper.insert(user);
 
-        log.info("用户注册成功: phone={}", maskPhoneForLog(request.getPhone()));
+        log.info("用户注册成功: phone={}", LogMaskUtil.maskPhone(request.getPhone()));
     }
 
     /**
@@ -125,7 +127,7 @@ public class UserService {
         response.setRole(resolveFrontendRole(role, authContext));
         response.setPermissionCodes(resolvePermissionCodes(authContext));
 
-        log.info("用户登录成功: userId={}, phone={}", user.getId(), maskPhoneForLog(user.getPhone()));
+        log.info("用户登录成功: userId={}, phone={}", user.getId(), LogMaskUtil.maskPhone(user.getPhone()));
         return response;
     }
 
@@ -146,6 +148,24 @@ public class UserService {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
         return toInternalUserRefResponse(user);
+    }
+
+    /**
+     * 内部联系方式查询：供通知服务解析短信/邮件收件人。
+     */
+    public InternalUserContactResponse getInternalUserContact(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+        }
+        InternalUserContactResponse response = new InternalUserContactResponse();
+        response.setUserId(user.getId());
+        response.setPhone(user.getPhone());
+        response.setEmail(user.getEmail());
+        return response;
     }
 
     /**
@@ -457,16 +477,5 @@ public class UserService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private String maskPhoneForLog(String phone) {
-        String value = trimToNull(phone);
-        if (value == null) {
-            return null;
-        }
-        if (value.length() < 7) {
-            return "****";
-        }
-        return value.substring(0, 3) + "****" + value.substring(value.length() - 4);
     }
 }

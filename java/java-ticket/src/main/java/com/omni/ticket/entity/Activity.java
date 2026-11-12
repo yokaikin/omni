@@ -32,7 +32,6 @@ public class Activity {
     private String venueApprovalNote;
     private String publishStatus;
     private String seatMapVisibility;
-    private Integer perUserLimit;
     private Integer refundFullDaysBefore;
     private Integer refundPartialDaysBefore;
     private Integer refundPartialRate;
@@ -84,8 +83,6 @@ public class Activity {
     public void setPublishStatus(String publishStatus) { this.publishStatus = publishStatus; }
     public String getSeatMapVisibility() { return seatMapVisibility; }
     public void setSeatMapVisibility(String seatMapVisibility) { this.seatMapVisibility = seatMapVisibility; }
-    public Integer getPerUserLimit() { return perUserLimit; }
-    public void setPerUserLimit(Integer perUserLimit) { this.perUserLimit = perUserLimit; }
     public Integer getRefundFullDaysBefore() { return refundFullDaysBefore; }
     public void setRefundFullDaysBefore(Integer refundFullDaysBefore) { this.refundFullDaysBefore = refundFullDaysBefore; }
     public Integer getRefundPartialDaysBefore() { return refundPartialDaysBefore; }

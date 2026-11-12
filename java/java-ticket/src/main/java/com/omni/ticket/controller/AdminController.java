@@ -8,6 +8,8 @@ import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
+import java.util.HashMap;
+import java.util.Map;
 import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.AdminSummaryResponse;
@@ -102,8 +104,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
+import java.time.LocalDateTime;import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -310,6 +311,7 @@ public class AdminController {
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
+        checkSeatCraftOwnerRole(ownerType, operatorId);
         return Result.success(seatCraftLayoutVersionService.getDraft(ownerType, ownerId));
     }
 
@@ -321,6 +323,7 @@ public class AdminController {
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
+        checkSeatCraftOwnerRole(ownerType, operatorId);
         return Result.success(seatCraftLayoutVersionService.listVersions(ownerType, ownerId));
     }
 
@@ -422,23 +425,28 @@ public class AdminController {
         ContentDisposition contentDisposition = ContentDisposition.attachment()
                 .filename(download.getOriginalFilename(), java.nio.charset.StandardCharsets.UTF_8)
                 .build();
-        InputStream inputStream = openPrivateAssetStream(download);
-        if (inputStream == null) {
-            return ResponseEntity.notFound().build();
-        }
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
                 .contentLength(download.getFileSize())
-                .body(new InputStreamResource(inputStream));
+                .body(new InputStreamResource(download.getInputStream()));
     }
 
-    private InputStream openPrivateAssetStream(PrivateAssetDownload download) {
-        try {
-            return Files.newInputStream(download.getPath());
-        } catch (IOException e) {
-            return null;
+    @GetMapping("/private-assets/{id}/download-url")
+    public Result<Map<String, Object>> presignedPrivateAssetDownloadUrl(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestParam(required = false, defaultValue = "300") Integer expirySeconds) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
         }
+        int expiry = Math.min(Math.max(expirySeconds, 60), 3600);
+        String url = privateAssetService.presignedDownloadUrl(id, operatorId, expiry);
+        Map<String, Object> data = new HashMap<>();
+        data.put("url", url);
+        data.put("expiresIn", expiry);
+        return Result.success(data);
     }
 
     @GetMapping("/artists/search")
@@ -1023,14 +1031,19 @@ public class AdminController {
                                          @RequestParam(required = false) Long userId,
                                          @RequestParam(defaultValue = "1") Integer page,
                                          @RequestParam(defaultValue = "10") Integer size,
-                                         @RequestParam(required = false) Long categoryId) {
+                                         @RequestParam(required = false) Long categoryId,
+                                         @RequestParam(defaultValue = "false") Boolean historical) {
         userId = parseOperatorId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
-        return Result.success(tourStationService.listManageableTours(userId, page, size, categoryId));
+        return Result.success(tourStationService.listManageableTours(userId, page, size, categoryId, historical));
     }
 
     public Result<Page<Tour>> listTours(String authorization, Long userId, Integer page, Integer size) {
-        return listTours(authorization, userId, page, size, null);
+        return listTours(authorization, userId, page, size, null, false);
+    }
+
+    public Result<Page<Tour>> listTours(String authorization, Long userId, Integer page, Integer size, Long categoryId) {
+        return listTours(authorization, userId, page, size, categoryId, false);
     }
 
     @GetMapping("/tours/{tourId}")
@@ -1140,6 +1153,24 @@ public class AdminController {
         return userAccessService.requireAdminOrAnyPermissionRole(userId, "venue.manage");
     }
 
+    /**
+     * 座位图设计器读取接口按归属类型校验角色：
+     * activity → activity.manage，session → session.manage，station → activity.manage/tour.manage。
+     */
+    private String checkSeatCraftOwnerRole(String ownerType, Long operatorId) {
+        String normalized = ownerType == null ? "" : ownerType.trim();
+        if ("activity".equals(normalized)) {
+            return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(operatorId, "activity.manage");
+        }
+        if ("session".equals(normalized)) {
+            return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(operatorId, "session.manage");
+        }
+        if ("station".equals(normalized)) {
+            return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(operatorId, "activity.manage", "tour.manage");
+        }
+        throw new BusinessException(ResultCode.BAD_REQUEST, "布局归属无效");
+    }
+
     private Long resolveArtistId(Map<String, Object> body) {
         Long artistId = parsePositiveLong(body.get("artistId"));
         if (artistId != null) return artistId;
@@ -1204,11 +1235,6 @@ public class AdminController {
         String seatMapVisibility = parseSeatMapVisibility(safeBody.get("seatMapVisibility"), SEAT_MAP_VISIBILITY_HIDDEN);
         if (seatMapVisibility == null) return Result.fail(400, "座位图展示策略不正确");
         activity.setSeatMapVisibility(seatMapVisibility);
-        try {
-            activity.setPerUserLimit(parsePerUserLimit(safeBody.get("perUserLimit")));
-        } catch (IllegalArgumentException e) {
-            return Result.fail(400, e.getMessage());
-        }
         try {
             setRefundPolicy(activity, safeBody);
         } catch (IllegalArgumentException e) {
@@ -1281,13 +1307,6 @@ public class AdminController {
             String seatMapVisibility = parseSeatMapVisibility(body.get("seatMapVisibility"), null);
             if (seatMapVisibility == null) return Result.fail(400, "座位图展示策略不正确");
             activity.setSeatMapVisibility(seatMapVisibility);
-        }
-        if (body.containsKey("perUserLimit")) {
-            try {
-                activity.setPerUserLimit(parsePerUserLimit(body.get("perUserLimit")));
-            } catch (IllegalArgumentException e) {
-                return Result.fail(400, e.getMessage());
-            }
         }
         try {
             setRefundPolicy(activity, body);
@@ -1496,21 +1515,6 @@ public class AdminController {
         return null;
     }
 
-    private Integer parsePerUserLimit(Object value) {
-        if (value == null || value.toString().trim().isEmpty()) {
-            return null;
-        }
-        try {
-            int parsed = Integer.parseInt(value.toString().trim());
-            if (parsed <= 0) {
-                throw new IllegalArgumentException("个人限购张数必须大于0");
-            }
-            return parsed;
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("个人限购张数必须为数字");
-        }
-    }
-
     private void setRefundPolicy(Activity activity, Map<String, Object> body) {
         Integer fullDays = parsePositiveInteger(body.get("refundFullDaysBefore"), activity.getRefundFullDaysBefore() == null ? 30 : activity.getRefundFullDaysBefore(), "全额退款提前天数");
         Integer partialDays = parsePositiveInteger(body.get("refundPartialDaysBefore"), activity.getRefundPartialDaysBefore() == null ? 7 : activity.getRefundPartialDaysBefore(), "折扣退款提前天数");
@@ -1570,7 +1574,8 @@ public class AdminController {
             @RequestParam(defaultValue = "10") Integer size,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Integer status,
-            @RequestParam(required = false) Long categoryId) {
+                                         @RequestParam(required = false) Long categoryId,
+                                         @RequestParam(defaultValue = "false") Boolean historical) {
         Long operatorId = parseOperatorId(authorization);
         if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         userId = operatorId;
@@ -1583,6 +1588,12 @@ public class AdminController {
             wrapper.eq(Activity::getOrganizerId, userId);
         }
         wrapper.ne(Activity::getPublishStatus, "deleted");
+        if (Boolean.TRUE.equals(historical)) {
+            wrapper.and(query -> query.eq(Activity::getPublishStatus, "deactivated").or().eq(Activity::getStatus, 0));
+        } else {
+            wrapper.ne(Activity::getPublishStatus, "deactivated");
+            wrapper.ne(Activity::getStatus, 0);
+        }
         wrapper.isNull(Activity::getTourId);
         if (StringUtils.hasText(keyword)) {
             wrapper.like(Activity::getName, keyword.trim());
@@ -1602,7 +1613,11 @@ public class AdminController {
     }
 
     public Result<Page<Activity>> listAdminActivities(String authorization, Long userId, Integer page, Integer size, String keyword, Integer status) {
-        return listAdminActivities(authorization, userId, page, size, keyword, status, null);
+        return listAdminActivities(authorization, userId, page, size, keyword, status, null, false);
+    }
+
+    public Result<Page<Activity>> listAdminActivities(String authorization, Long userId, Integer page, Integer size, String keyword, Integer status, Long categoryId) {
+        return listAdminActivities(authorization, userId, page, size, keyword, status, categoryId, false);
     }
 
     private void attachLineupSummary(Activity activity) {
@@ -2156,6 +2171,7 @@ public class AdminController {
                                                                             @RequestHeader(value = "Authorization", required = false) String authorization) {
         Long operatorId = parseOperatorId(authorization);
         if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        checkVenueReadRole(operatorId);
         SeatCraftLayoutDtos.LayoutResponse layout = venueDefaultLayoutService.getLayout(venueId);
         return Result.success(layout);
     }

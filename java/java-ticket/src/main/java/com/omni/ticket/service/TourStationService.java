@@ -255,9 +255,13 @@ public class TourStationService {
     }
 
     public Page<Tour> listManageableTours(Long userId, int page, int size, Long categoryId) {
+        return listManageableTours(userId, page, size, categoryId, false);
+    }
+
+    public Page<Tour> listManageableTours(Long userId, int page, int size, Long categoryId, Boolean historical) {
         InternalUserRefResponse user = requireTourManager(userId);
         LambdaQueryWrapper<Tour> wrapper = new LambdaQueryWrapper<Tour>()
-                .eq(Tour::getStatus, 1);
+                .eq(Tour::getStatus, Boolean.TRUE.equals(historical) ? 0 : 1);
         if ("organizer".equals(user.getRole())) {
             wrapper.eq(Tour::getOrganizerId, userId);
         }
@@ -652,7 +656,7 @@ public class TourStationService {
         activity.setDescription(defaultText(station.getDescription(), tour.getDescription()));
         activity.setPoster(defaultText(station.getPoster(), tour.getPoster()));
         activity.setPublishStatus("publishing");
-        activity.setPerUserLimit(parsePerUserLimit(body == null ? null : body.get("perUserLimit")));
+        activity.setRealNameRequired(true);
         activity.setUpdateTime(now);
         if (!existingActivity) {
             activityMapper.insert(activity);
@@ -727,7 +731,7 @@ public class TourStationService {
         LocalDateTime now = LocalDateTime.now();
         activity.setVenueApplicationId(application.getId());
         activity.setPublishStatus(PUBLISH_STATUS_PUBLISHED);
-        activity.setPerUserLimit(parsePerUserLimit(body == null ? null : body.get("perUserLimit")));
+        activity.setRealNameRequired(true);
         activity.setUpdateTime(now);
         copyPublishSeatCraftLayout(userId, activity, station, application);
 
@@ -941,22 +945,6 @@ public class TourStationService {
 
     private Long defaultLong(Long value, Long fallback) {
         return value == null ? fallback : value;
-    }
-
-    private Integer parsePerUserLimit(Object value) {
-        String text = optionalText(value);
-        if (text == null) {
-            return null;
-        }
-        try {
-            int parsed = Integer.parseInt(text);
-            if (parsed <= 0) {
-                throw new BusinessException(400, "个人限购张数必须大于0");
-            }
-            return parsed;
-        } catch (NumberFormatException e) {
-            throw new BusinessException(400, "个人限购张数必须为数字");
-        }
     }
 
     private String defaultText(String value, String fallback) {

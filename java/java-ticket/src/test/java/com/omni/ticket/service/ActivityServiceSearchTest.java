@@ -220,7 +220,7 @@ class ActivityServiceSearchTest {
         s.setId(id);
         s.setActivityId(activityId);
         s.setVenueId(venueId);
-        s.setStartTime(LocalDateTime.of(2026, 7, 15, 19, 30));
+        s.setStartTime(LocalDateTime.now().plusDays(30));
         s.setStatus(1);
         return s;
     }

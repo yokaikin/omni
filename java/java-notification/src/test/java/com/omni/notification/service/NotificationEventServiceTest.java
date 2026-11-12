@@ -6,9 +6,6 @@ import com.omni.notification.dto.InternalNotificationRequest;
 import com.omni.notification.entity.Notification;
 import com.omni.notification.entity.NotificationDelivery;
 import com.omni.notification.mapper.NotificationDeliveryMapper;
-import com.omni.notification.sms.SmsSendRequest;
-import com.omni.notification.sms.SmsSendResult;
-import com.omni.notification.sms.SmsSender;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -19,6 +16,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -31,15 +29,14 @@ class NotificationEventServiceTest {
 
     private final NotificationDeliveryMapper deliveryMapper = mock(NotificationDeliveryMapper.class);
     private final NotificationService notificationService = mock(NotificationService.class);
-    private final SmsSender smsSender = mock(SmsSender.class);
-    private final NotificationEventService service = new NotificationEventService(deliveryMapper, notificationService, smsSender);
+    private final NotificationEventService service =
+            new NotificationEventService(deliveryMapper, notificationService);
 
     @Test
     void springContextCanCreateNotificationEventService() {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
             context.registerBean(NotificationDeliveryMapper.class, () -> deliveryMapper);
             context.registerBean(NotificationService.class, () -> notificationService);
-            context.registerBean(SmsSender.class, () -> smsSender);
             context.register(NotificationEventService.class);
 
             context.refresh();
@@ -99,27 +96,14 @@ class NotificationEventServiceTest {
     }
 
     @Test
-    void processEventSkipsDisabledSmsAndKeepsInAppDelivery() {
+    void processEventRecordsPendingSmsAndKeepsInAppDelivery() {
         NotificationEventMessage message = eventMessage();
         message.setChannels(List.of("IN_APP", "SMS"));
         when(deliveryMapper.selectOne(any())).thenReturn(null);
         when(notificationService.createInternalMessage(any())).thenReturn(new Notification());
-        when(smsSender.send(any())).thenReturn(new SmsSendResult("SKIPPED", null, "短信渠道未配置"));
-
         service.processEvent(message);
 
         verify(notificationService).createInternalMessage(any());
-
-        ArgumentCaptor<SmsSendRequest> smsRequestCaptor = ArgumentCaptor.forClass(SmsSendRequest.class);
-        verify(smsSender).send(smsRequestCaptor.capture());
-        SmsSendRequest smsRequest = smsRequestCaptor.getValue();
-        assertEquals("support-reply:99:1", smsRequest.getEventId());
-        assertEquals("SUPPORT_REPLY", smsRequest.getEventType());
-        assertEquals(2004L, smsRequest.getUserId());
-        assertEquals(9001L, smsRequest.getOrderId());
-        assertEquals(1001L, smsRequest.getActivityId());
-        assertEquals("support-reply", smsRequest.getTemplateCode());
-        assertEquals("人工客服回复了你的咨询，请查看客服会话。", smsRequest.getContent());
 
         ArgumentCaptor<NotificationDelivery> deliveryCaptor = ArgumentCaptor.forClass(NotificationDelivery.class);
         verify(deliveryMapper, times(2)).insert(deliveryCaptor.capture());
@@ -131,8 +115,38 @@ class NotificationEventServiceTest {
 
         NotificationDelivery smsDelivery = deliveries.get(1);
         assertEquals("SMS", smsDelivery.getChannel());
-        assertEquals("SKIPPED", smsDelivery.getStatus());
-        assertEquals("短信渠道未配置", smsDelivery.getFailureReason());
+        assertEquals("PENDING", smsDelivery.getStatus());
+        assertNull(smsDelivery.getFailureReason());
+    }
+
+    @Test
+    void processEventRecordsPendingSmsDeliveryForRetry() {
+        NotificationEventMessage message = eventMessage();
+        message.setChannels(List.of("SMS"));
+        when(deliveryMapper.selectOne(any())).thenReturn(null);
+        service.processEvent(message);
+
+        ArgumentCaptor<NotificationDelivery> deliveryCaptor = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryMapper).insert(deliveryCaptor.capture());
+        NotificationDelivery smsDelivery = deliveryCaptor.getValue();
+        assertEquals("SMS", smsDelivery.getChannel());
+        assertEquals("PENDING", smsDelivery.getStatus());
+        assertNull(smsDelivery.getSentTime());
+    }
+
+    @Test
+    void processEventRecordsPendingEmailDeliveryForRetry() {
+        NotificationEventMessage message = eventMessage();
+        message.setChannels(List.of("EMAIL"));
+        when(deliveryMapper.selectOne(any())).thenReturn(null);
+        service.processEvent(message);
+
+        ArgumentCaptor<NotificationDelivery> deliveryCaptor = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryMapper).insert(deliveryCaptor.capture());
+        NotificationDelivery emailDelivery = deliveryCaptor.getValue();
+        assertEquals("EMAIL", emailDelivery.getChannel());
+        assertEquals("PENDING", emailDelivery.getStatus());
+        assertNull(emailDelivery.getSentTime());
     }
 
     @Test

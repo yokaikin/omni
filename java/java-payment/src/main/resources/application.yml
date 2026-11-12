@@ -6,7 +6,7 @@ spring:
     name: java-payment
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/omni_ticket
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/omni_payment
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:123456}
   cloud:
@@ -22,6 +22,16 @@ spring:
       transport:
         dashboard: ${SENTINEL_DASHBOARD:localhost:8858}
         port: ${SENTINEL_PAYMENT_TRANSPORT_PORT:8723}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:admin}
+    password: ${RABBITMQ_PASSWORD:123456}
+    virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
 
 mybatis-plus:
   configuration:
@@ -29,6 +39,15 @@ mybatis-plus:
   global-config:
     db-config:
       id-type: auto
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 alipay:
   gateway-url: ${ALIPAY_GATEWAY_URL:}
@@ -46,3 +65,17 @@ alipay:
 internal:
   api:
     token: ${INTERNAL_API_TOKEN:omni-local-internal-token}
+
+logging:
+  level:
+    # 压制支付宝 SDK 的请求参数级日志（bizContent 含订单标题/金额/交易号，禁止落盘）
+    sdk.biz.info: warn
+
+omni:
+  mq:
+    enabled: true
+  payment:
+    pending-sync:
+      scan-ms: ${OMNI_PAYMENT_PENDING_SYNC_SCAN_MS:60000}
+      timeout-minutes: ${OMNI_PAYMENT_PENDING_SYNC_TIMEOUT_MINUTES:5}
+      batch-size: ${OMNI_PAYMENT_PENDING_SYNC_BATCH_SIZE:20}

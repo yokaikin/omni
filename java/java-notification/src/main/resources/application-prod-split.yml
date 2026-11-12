@@ -26,3 +26,38 @@ omni:
   notification:
     direct-channel:
       enabled: false
+    sms:
+      provider: ${OMNI_NOTIFICATION_SMS_PROVIDER:disabled}
+      aliyun:
+        endpoint: ${ALIYUN_SMS_ENDPOINT:dysmsapi.aliyuncs.com}
+        access-key-id: ${ALIYUN_SMS_ACCESS_KEY_ID:}
+        access-key-secret: ${ALIYUN_SMS_ACCESS_KEY_SECRET:}
+        sign-name: ${ALIYUN_SMS_SIGN_NAME:}
+    email:
+      provider: ${OMNI_NOTIFICATION_EMAIL_PROVIDER:disabled}
+      smtp:
+        from: ${OMNI_NOTIFICATION_EMAIL_FROM:}
+    delivery:
+      retry:
+        max-attempts: ${OMNI_NOTIFICATION_DELIVERY_RETRY_MAX_ATTEMPTS:3}
+        scan-interval-ms: ${OMNI_NOTIFICATION_DELIVERY_RETRY_SCAN_INTERVAL_MS:60000}
+  object-storage:
+    provider: ${OMNI_OBJECT_STORAGE_PROVIDER:disabled}
+    minio:
+      endpoint: ${OMNI_OBJECT_STORAGE_MINIO_ENDPOINT:}
+      access-key: ${OMNI_OBJECT_STORAGE_MINIO_ACCESS_KEY:}
+      secret-key: ${OMNI_OBJECT_STORAGE_MINIO_SECRET_KEY:}
+      bucket: ${OMNI_OBJECT_STORAGE_MINIO_BUCKET:omni-notification}
+
+spring.mail:
+  host: ${SMTP_HOST:}
+  port: ${SMTP_PORT:465}
+  username: ${SMTP_USERNAME:}
+  password: ${SMTP_PASSWORD:}
+  default-encoding: UTF-8
+  properties:
+    mail:
+      smtp:
+        auth: true
+        ssl:
+          enable: ${SMTP_SSL_ENABLE:true}

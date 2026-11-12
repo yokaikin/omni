@@ -132,7 +132,33 @@ export class WaitlistRepository {
        returning id`,
       [eventKey, sessionId, ticketTypeId, releasedQuantity, sourceOrderId],
     );
-    return result.rows.length === 1;
+    if (result.rows.length === 1) {
+      return true;
+    }
+    const retryClaim = await this.database.query(
+      `update waitlist_allocation_log
+       set status = 'PROCESSING', message = '候补分配事件重试'
+       where event_key = $1 and attempt_no = 0 and status = 'FAILED'
+       returning id`,
+      [eventKey],
+    );
+    if (retryClaim.rows.length === 1) {
+      await this.database.query(
+        `delete from waitlist_allocation_log where event_key = $1 and attempt_no > 0`,
+        [eventKey],
+      );
+      return true;
+    }
+    return false;
+  }
+
+  async markAllocationEventFailed(eventKey: string, message: string): Promise<void> {
+    await this.database.query(
+      `update waitlist_allocation_log
+       set status = 'FAILED', message = $2
+       where event_key = $1 and attempt_no = 0`,
+      [eventKey, message],
+    );
   }
 
   async logAllocationAttempt(input: {

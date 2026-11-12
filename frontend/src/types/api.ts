@@ -2,6 +2,8 @@
  * 后端接口响应类型
  */
 
+import type { SeatBlockDraft, SeatOverrideDraft, TicketGroupDraft } from '@/components/seatcraft/types'
+
 /** 统一响应体 */
 export interface ApiResult<T = unknown> {
   code: number
@@ -630,7 +632,6 @@ export interface ActivityEntity {
   riskSuspendedAt?: string | null
   riskRestoredAt?: string | null
   seatMapVisibility?: 'published' | 'hidden' | null
-  perUserLimit?: number | null
   realNameRequired?: boolean | null
   ticketTransferAllowed?: boolean | null
   refundFullDaysBefore?: number | null
@@ -732,6 +733,45 @@ export interface CheckInRecordVO {
   failureReason?: string | null
   checkedInAt?: string | null
   createTime?: string | null
+}
+
+export interface SearchIndexHealthVO {
+  available: boolean
+  aliasName: string
+  indexNames?: string[] | null
+  docCount?: number | null
+  message?: string | null
+  checkedAt?: string | null
+}
+
+export interface SearchIndexConsistencyVO {
+  dbCount: number
+  indexCount: number
+  missingInIndex: string[]
+  staleInIndex: string[]
+  consistent: boolean
+  checkedAt?: string | null
+}
+
+export interface SearchIndexRebuildResultVO {
+  indexedCount: number
+  indexName: string
+  aliasName: string
+  startedAt?: string | null
+  finishedAt?: string | null
+}
+
+export interface SearchIndexDeadLetterVO {
+  id: number
+  sourceQueue?: string | null
+  deadLetterQueue?: string | null
+  payload?: string | null
+  failureMessage?: string | null
+  status: 'PENDING' | 'REPLAYED' | string
+  replayCount?: number | null
+  replayedAt?: string | null
+  createdTime?: string | null
+  updatedTime?: string | null
 }
 
 export interface HotActivityVO {
@@ -1483,7 +1523,6 @@ export interface ActivityDraftPayload {
   description?: string | null
   poster?: string | null
   seatMapVisibility?: 'published' | 'hidden' | null
-  perUserLimit?: number | null
   realNameRequired?: boolean | null
   ticketTransferAllowed?: boolean | null
   refundFullDaysBefore?: number | null
@@ -2279,4 +2318,178 @@ export interface DeactivateOrganizerRequest {
   organizerId: number
   confirmRefund: boolean
   reason?: string
+}
+
+/* ============ 管理端写请求 DTO（收敛原 Record<string, unknown> 参数） ============ */
+
+export interface ActivityStatusUpdateRequest {
+  userId?: number
+  status: number
+}
+
+export interface AdminActivityArtistPayload {
+  artistId: number
+  isPrimary?: boolean
+  roleType?: string
+  roleName?: string
+  visibility?: string
+  sort?: number
+}
+
+export interface AdminActivityUpsertRequest {
+  userId?: number
+  name: string
+  categoryId: number
+  artists: AdminActivityArtistPayload[]
+  poster?: string | null
+  description?: string | null
+  realNameRequired?: boolean
+  ticketTransferAllowed?: boolean
+  refundFullDaysBefore?: number
+  refundPartialDaysBefore?: number
+  refundPartialRate?: number
+  tourId?: number
+  stationId?: number
+  venueApplicationId?: number | null
+  venueApprovalNo?: string | null
+  venueApprovalFileUrl?: string | null
+  venueApprovalNote?: string | null
+  publishStatus?: string
+  seatMapVisibility?: string
+}
+
+export interface AdminSessionUpsertRequest {
+  userId?: number
+  activityId?: number
+  venueId?: number
+  startTime?: string
+  endTime?: string | null
+  status?: number
+}
+
+export interface AdminTicketTypeUpdateRequest {
+  name?: string
+  price?: number
+  totalStock?: number
+  status?: number
+}
+
+export interface AdminVenueUpsertRequest {
+  userId?: number
+  name: string
+  city?: string
+  address?: string
+  capacity?: number | null
+}
+
+export interface VenueAreaCreateRequest {
+  userId?: number
+  name: string
+  rowCount: number
+  seatsPerRow: number
+  rowStart?: number
+  seatStart?: number
+  color?: string
+  sort?: number
+}
+
+export interface StationDraftCreateRequest {
+  userId?: number
+  city: string
+  stationName?: string | null
+  poster?: string | null
+  description?: string | null
+  announceOnly?: boolean
+  venueApplicationId?: number | null
+}
+
+export interface StationPublishRequest {
+  userId?: number
+  scheduleTba?: boolean
+  startTime?: string | null
+  endTime?: string | null
+}
+
+export interface StationPublishResponse {
+  tour?: TourEntity | null
+  station: StationEntity
+  activity: ActivityEntity
+  session: SessionEntity | null
+}
+
+export interface VenueApplicationMaterialPayload {
+  materialType: VenueApplicationMaterialType
+  assetId: number
+  validFrom?: string
+  validTo?: string
+}
+
+export interface VenueApplicationLayoutSectionPayload {
+  id: number
+  sectionKey: string
+  name: string
+  rows: number
+  cols: number
+  x: number
+  y: number
+  color: string
+  type: string
+  layout: string
+  radius?: number | null
+  arcSpan?: number | null
+  rotation?: number | null
+  primeRowStart?: number | null
+  primeRowEnd?: number | null
+  primeColStart?: number | null
+  primeColEnd?: number | null
+  ticketTypeId?: number | null
+}
+
+export interface VenueApplicationLayoutPayload {
+  id: number
+  name: string
+  templateType: string
+  stageTitle: string
+  stageX: number
+  stageY: number
+  canvasWidth: number
+  canvasHeight: number
+  sections: VenueApplicationLayoutSectionPayload[]
+  blocks?: SeatBlockDraft[]
+  overrides?: SeatOverrideDraft[]
+  ticketGroups?: TicketGroupDraft[]
+}
+
+export interface VenueApplicationSubmitRequest {
+  userId?: number
+  venueId?: number | null
+  venueName?: string
+  venueNameEn?: string
+  venueType?: string
+  city?: string
+  province?: string
+  district?: string
+  address?: string
+  capacity?: number | null
+  contactName?: string
+  contactPhone?: string
+  qualificationNo?: string | null
+  businessScope?: string | null
+  description?: string | null
+  validFrom?: string
+  validTo?: string
+  proofNote?: string | null
+  proofFileUrl?: string | null
+  proofAssetId?: number | null
+  layoutSnapshot?: string
+  layout?: VenueApplicationLayoutPayload
+  materials?: VenueApplicationMaterialPayload[]
+}
+
+export interface VenueApplicationReviewRequest {
+  userId?: number
+  action?: string
+  mode?: string
+  venueId?: number | null
+  reviewNote?: string | null
 }

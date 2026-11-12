@@ -18,8 +18,6 @@ type ActivityForm = {
   artists: ActivityArtistVO[]
   poster: string
   description: string
-  perUserLimit: string
-  realNameRequired: boolean
   ticketTransferAllowed: boolean
   refundFullDaysBefore: string
   refundPartialDaysBefore: string
@@ -32,8 +30,6 @@ const emptyForm: ActivityForm = {
   artists: [],
   poster: '',
   description: '',
-  perUserLimit: '',
-  realNameRequired: false,
   ticketTransferAllowed: true,
   refundFullDaysBefore: '30',
   refundPartialDaysBefore: '7',
@@ -91,8 +87,6 @@ export default function EditActivityPage() {
         artists: activity.artists || [],
         poster: activity.poster || '',
         description: activity.description || '',
-        perUserLimit: activity.perUserLimit == null ? '' : String(activity.perUserLimit),
-        realNameRequired: Boolean(activity.realNameRequired),
         ticketTransferAllowed: activity.ticketTransferAllowed !== false,
         refundFullDaysBefore: String(activity.refundFullDaysBefore ?? 30),
         refundPartialDaysBefore: String(activity.refundPartialDaysBefore ?? 7),
@@ -134,11 +128,6 @@ export default function EditActivityPage() {
       setError('请至少选择一个活动艺人')
       return
     }
-    const limitText = form.perUserLimit.trim()
-    if (limitText && (!/^\d+$/.test(limitText) || Number(limitText) <= 0)) {
-      setError('个人限购张数必须为正整数')
-      return
-    }
     const fullDays = Number(form.refundFullDaysBefore)
     const partialDays = Number(form.refundPartialDaysBefore)
     const partialRate = Number(form.refundPartialRate)
@@ -166,8 +155,7 @@ export default function EditActivityPage() {
         })),
         poster: form.poster.trim() || null,
         description: form.description.trim() || null,
-        perUserLimit: limitText ? Number(limitText) : null,
-        realNameRequired: form.realNameRequired,
+        realNameRequired: true,
         ticketTransferAllowed: form.ticketTransferAllowed,
         refundFullDaysBefore: fullDays,
         refundPartialDaysBefore: partialDays,
@@ -388,18 +376,7 @@ export default function EditActivityPage() {
             <textarea value={form.description} onChange={event => setForm({ ...form, description: event.target.value })} rows={5} className="mt-1.5 w-full resize-none rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]" placeholder="描述活动内容..." />
           </label>
 
-          <label className="block text-[13px] font-medium text-[#333]">
-            个人限购
-            <input type="number" min={1} value={form.perUserLimit} onChange={event => setForm({ ...form, perUserLimit: event.target.value })} className="mt-1.5 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="留空表示不限购，例如 2" />
-            <span className="mt-1 block text-[12px] font-normal text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</span>
-          </label>
-          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
-            <input type="checkbox" checked={form.realNameRequired} onChange={event => setForm({ ...form, realNameRequired: event.target.checked })} className="mt-0.5 accent-[#ff1268]" />
-            <span>
-              <span className="font-medium">实名制购票</span>
-              <span className="mt-1 block text-[#999]">开启后，用户下单和候补时需要选择对应数量的实名观演人。</span>
-            </span>
-          </label>
+          <div className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">实名制购票：平台活动默认开启，每张票均需绑定实名观演人。</div>
           <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
             <input type="checkbox" checked={form.ticketTransferAllowed} onChange={event => setForm({ ...form, ticketTransferAllowed: event.target.checked })} className="mt-0.5 accent-[#ff1268]" />
             <span>

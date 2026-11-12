@@ -4,12 +4,14 @@ import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
+import com.omni.common.util.LogMaskUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.exception.BusinessException;
 import com.omni.user.config.UserSentinelConfig;
 import com.omni.user.dto.ChangePhoneRequest;
 import com.omni.user.dto.ChangePasswordRequest;
 import com.omni.user.dto.InternalUserRefResponse;
+import com.omni.user.dto.InternalUserContactResponse;
 import com.omni.user.dto.LoginRequest;
 import com.omni.user.dto.LoginResponse;
 import com.omni.user.dto.OrganizerApplicationRequest;
@@ -393,6 +395,16 @@ public class UserController {
         return Result.success(rbacService.getInternalAuthContext(id));
     }
 
+    @GetMapping("/internal/{id}/contact")
+    public Result<InternalUserContactResponse> getInternalUserContact(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(userService.getInternalUserContact(id));
+    }
+
     @PostMapping("/internal/attendees/resolve")
     public Result<List<ResolvedAttendeeResponse>> resolveInternalAttendees(
             @RequestBody ResolveAttendeesRequest request,
@@ -417,24 +429,13 @@ public class UserController {
             return Result.fail(400, "当前环境未启用短信验证码");
         }
         System.out.println("==========================================");
-        System.out.println("  短信验证码 [" + maskPhoneForLog(phone) + "]: " + MOCK_SMS_CODE);
+        System.out.println("  短信验证码 [" + LogMaskUtil.maskPhone(phone) + "]: " + MOCK_SMS_CODE);
         System.out.println("==========================================");
         return Result.success(MOCK_SMS_CODE);
     }
 
     public Result<String> sendCodeBlocked(String phone, BlockException exception) {
         return Result.fail(429, "系统繁忙，请稍后重试");
-    }
-
-    private String maskPhoneForLog(String phone) {
-        if (!StringUtils.hasText(phone)) {
-            return null;
-        }
-        String value = phone.trim();
-        if (value.length() < 7) {
-            return "****";
-        }
-        return value.substring(0, 3) + "****" + value.substring(value.length() - 4);
     }
 
     private Long requireAuthUserId(String authorization) {

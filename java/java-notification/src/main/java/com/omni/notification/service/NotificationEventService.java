@@ -9,16 +9,12 @@ import com.omni.exception.BusinessException;
 import com.omni.notification.dto.InternalNotificationRequest;
 import com.omni.notification.entity.NotificationDelivery;
 import com.omni.notification.mapper.NotificationDeliveryMapper;
-import com.omni.notification.sms.SmsSendRequest;
-import com.omni.notification.sms.SmsSendResult;
-import com.omni.notification.sms.SmsSender;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -27,28 +23,26 @@ public class NotificationEventService {
     public static final String STATUS_PENDING = "PENDING";
     public static final String STATUS_SENT = "SENT";
     public static final String STATUS_SKIPPED = "SKIPPED";
+    public static final String STATUS_FAILED = "FAILED";
     public static final String CHANNEL_IN_APP = "IN_APP";
     public static final String CHANNEL_SMS = "SMS";
+    public static final String CHANNEL_EMAIL = "EMAIL";
 
     private final NotificationDeliveryMapper deliveryMapper;
     private final NotificationService notificationService;
-    private final SmsSender smsSender;
     private final ObjectMapper objectMapper;
 
     @Autowired
     public NotificationEventService(NotificationDeliveryMapper deliveryMapper,
-                                    NotificationService notificationService,
-                                    SmsSender smsSender) {
-        this(deliveryMapper, notificationService, smsSender, new ObjectMapper());
+                                    NotificationService notificationService) {
+        this(deliveryMapper, notificationService, new ObjectMapper());
     }
 
     NotificationEventService(NotificationDeliveryMapper deliveryMapper,
                              NotificationService notificationService,
-                             SmsSender smsSender,
                              ObjectMapper objectMapper) {
         this.deliveryMapper = deliveryMapper;
         this.notificationService = notificationService;
-        this.smsSender = smsSender;
         this.objectMapper = objectMapper;
     }
 
@@ -62,8 +56,8 @@ public class NotificationEventService {
             if (CHANNEL_IN_APP.equals(channel)) {
                 createInAppNotification(message);
                 deliveryMapper.insert(buildDelivery(message, channel, STATUS_SENT, LocalDateTime.now()));
-            } else if (CHANNEL_SMS.equals(channel)) {
-                deliveryMapper.insert(buildSmsDelivery(message, channel));
+            } else if (CHANNEL_SMS.equals(channel) || CHANNEL_EMAIL.equals(channel)) {
+                deliveryMapper.insert(buildDelivery(message, channel, STATUS_PENDING, null));
             } else {
                 deliveryMapper.insert(buildDelivery(message, channel, STATUS_PENDING, null));
             }
@@ -97,32 +91,6 @@ public class NotificationEventService {
         request.setActionLabel(message.getActionLabel());
         request.setAggregateKey(message.getAggregateKey());
         notificationService.createInternalMessage(request);
-    }
-
-    private NotificationDelivery buildSmsDelivery(NotificationEventMessage message, String channel) {
-        SmsSendResult result = smsSender.send(buildSmsRequest(message));
-        if (result == null) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "短信投递结果不能为空");
-        }
-        String status = normalizeStatus(result.getStatus());
-        LocalDateTime sentTime = STATUS_SENT.equals(status) ? LocalDateTime.now() : null;
-        NotificationDelivery delivery = buildDelivery(message, channel, status, sentTime);
-        delivery.setProviderMessageId(trimToNull(result.getProviderMessageId()));
-        delivery.setFailureReason(trimToNull(result.getFailureReason()));
-        return delivery;
-    }
-
-    private SmsSendRequest buildSmsRequest(NotificationEventMessage message) {
-        SmsSendRequest request = new SmsSendRequest();
-        request.setEventId(message.getEventId().trim());
-        request.setEventType(message.getEventType().trim());
-        request.setUserId(message.getUserId());
-        request.setOrderId(message.getOrderId());
-        request.setActivityId(message.getActivityId());
-        request.setTemplateCode(trimToNull(message.getTemplateCode()));
-        request.setContent(message.getContent().trim());
-        request.setPayload(message.getPayload());
-        return request;
     }
 
     private NotificationDelivery buildDelivery(NotificationEventMessage message,
@@ -167,10 +135,4 @@ public class NotificationEventService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private String normalizeStatus(String status) {
-        if (!StringUtils.hasText(status)) {
-            return STATUS_PENDING;
-        }
-        return status.trim().toUpperCase(Locale.ROOT);
-    }
 }

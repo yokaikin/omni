@@ -48,6 +48,7 @@ export const consoleMenuGroups: ConsoleMenuGroup[] = [
     roles: ['admin', 'organizer'],
     children: [
       { href: '/console/activities', label: '活动发布管理' },
+      { href: '/console/activities/history', label: '以往活动' },
       { href: '/console/tours', label: '巡演草稿管理' },
       { href: '/console/sessions', label: '场次与票档管理' },
       { href: '/console/venue', label: '场馆记录管理' },
@@ -91,6 +92,7 @@ export const consoleMenuGroups: ConsoleMenuGroup[] = [
       { href: '/console/accounts', label: '平台账号管理', icon: Users, roles: ['admin'] },
       { href: '/console/reconciliation', label: '日结对账报表' },
       { href: '/console/exception-tasks', label: '异常补偿任务' },
+      { href: '/console/search-ops', label: '搜索索引运维' },
       { href: '/console/audit-logs', label: '操作审计日志' },
     ],
   },

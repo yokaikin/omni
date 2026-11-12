@@ -12,9 +12,10 @@ import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDia
 import { SafeImage } from '@/components/SafeImage'
 import { cancelGrabRequest, cancelSubscription, createActivityQuestion, createAlipayPagePay, createSubscription, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, listActivities, listActivityQuestions, listActivityReviews, listSubscriptions, listUserAttendees, recordUserBrowseHistory, reportActivityReview, submitGrabRequest } from '@/lib/api'
 import { captureAnalyticsEvent } from '@/lib/analytics'
-import { getUser, isAuthenticated } from '@/lib/auth'
-import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, canShowWaitlistEntry, getPurchaseConfirmCopy, getPurchaseQuantityMax, getWaitlistQuantityMax, shouldResetGrabIdempotencyForStatus, type PurchaseConfirmMode } from '@/lib/purchase-intent'
+import { getUser, isAuthenticated, getToken } from '@/lib/auth'
+import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, canShowWaitlistEntry, getPurchaseConfirmCopy, getPurchaseQuantityMax, shouldResetGrabIdempotencyForStatus, type PurchaseConfirmMode } from '@/lib/purchase-intent'
 import { startGrabProgressPolling } from '@/lib/grab-progress-polling'
+import { connectGrabProgressSocket, GRAB_PROGRESS_CONNECTED_POLL_INTERVAL_MS, type GrabProgressSocketStatus } from '@/lib/grab-progress-socket'
 import { getCountdownText } from '@/lib/subscription'
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
 import { getAutoDowngradeDisplay, getGrabProgressDisplayMessage, getQueueRankTrendLabel, localizeGrabProgressMessage } from '@/lib/grab-progress'
@@ -277,6 +278,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [allowAutoDowngrade, setAllowAutoDowngrade] = useState(false)
   const [grabProgress, setGrabProgress] = useState<GrabProgressResult | null>(null)
   const [grabProgressOpen, setGrabProgressOpen] = useState(false)
+  const [grabSocketStatus, setGrabSocketStatus] = useState<GrabProgressSocketStatus>('disabled')
   const [progressPaymentOpening, setProgressPaymentOpening] = useState(false)
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false)
   const [waitlistMessage, setWaitlistMessage] = useState('')
@@ -307,6 +309,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const hydratedGrabRequestRef = useRef<string | null>(null)
   const initialPurchaseSelectionAppliedRef = useRef<string | null>(null)
   const loadDetailRef = useRef(() => {})
+  const grabProgressFetchRef = useRef<(() => void) | null>(null)
   const lastRefreshRef = useRef(0)
   const toastTimerRef = useRef<number | null>(null)
   const actionLockRef = useRef<Set<ActivitySubscriptionActionType>>(new Set())
@@ -388,7 +391,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     ticket: selectedTicket,
     visibleStock: selectedTicketVisibleStock,
   })
-  const waitlistQuantityMax = getWaitlistQuantityMax(detail?.activity.perUserLimit)
+  const waitlistQuantityMax = 6
   const actionQuantityMax = showWaitlistEntry ? waitlistQuantityMax : purchaseQuantityMax
   const confirmCopy = getPurchaseConfirmCopy(confirmMode)
   const confirmSubmitting = confirmMode === 'waitlist' ? waitlistSubmitting : ordering
@@ -681,10 +684,42 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         })
     }
 
-    const stopPolling = startGrabProgressPolling(fetchProgress)
+    grabProgressFetchRef.current = fetchProgress
+    const stopPolling = startGrabProgressPolling(fetchProgress, {
+      intervalMs: grabSocketStatus === 'connected' ? GRAB_PROGRESS_CONNECTED_POLL_INTERVAL_MS : undefined,
+    })
     return () => {
       cancelled = true
+      grabProgressFetchRef.current = null
       stopPolling()
+    }
+  }, [grabProgressOpen, grabProgress?.requestId, grabProgress?.status, grabSocketStatus])
+
+  useEffect(() => {
+    if (!grabProgressOpen || !grabProgress?.requestId || TERMINAL_GRAB_STATUSES.has(grabProgress.status)) return
+
+    let cancelled = false
+    const disconnectSocket = connectGrabProgressSocket({
+      requestId: grabProgress.requestId,
+      token: getToken(),
+      onProgress: (progress) => {
+        if (cancelled) return
+        setGrabProgress((prev) => ({
+          ...progress,
+          queueRankPrevious: prev?.queueRank ?? null,
+        }))
+      },
+      onQueueAdvanced: () => {
+        if (!cancelled) grabProgressFetchRef.current?.()
+      },
+      onStatusChange: (status) => {
+        if (!cancelled) setGrabSocketStatus(status)
+      },
+    })
+    return () => {
+      cancelled = true
+      disconnectSocket()
+      setGrabSocketStatus('disconnected')
     }
   }, [grabProgressOpen, grabProgress?.requestId, grabProgress?.status])
 
@@ -1309,7 +1344,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     { title: '票档区间', value: activeTicketPriceRange, icon: Ticket },
   ]
   const purchaseRulePills = [
-    { title: '限购政策', value: activity.perUserLimit && activity.perUserLimit > 0 ? `每单限 ${activity.perUserLimit} 张` : '以提交订单为准' },
+    { title: '限购政策', value: '按场次库存和下单数量校验' },
     { title: '实名规则', value: '强制实名' },
     { title: '转赠支持', value: activity.ticketTransferAllowed ? '支持电子转赠' : '暂不支持转赠' },
     { title: '退换说明', value: '不支持退换' },
@@ -1317,9 +1352,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const purchaseRuleRows = [
     {
       title: '购票规则',
-      value: activity.perUserLimit && activity.perUserLimit > 0
-        ? `同一账号当前每单最多购买 ${activity.perUserLimit} 张，实名要求以提交订单时校验为准。`
-        : '下单前请确认场次、票档、数量和观演人信息，实际限购以提交订单时校验为准。',
+      value: '下单前请确认场次、票档、数量和观演人信息，每张票均需绑定实名观演人。',
     },
     {
       title: '票档库存',

@@ -692,7 +692,6 @@ public class TicketSalesInternalService {
             response.setActivityPoster(activity.getPoster());
             response.setTourId(activity.getTourId());
             response.setStationId(activity.getStationId());
-            response.setPerUserLimit(activity.getPerUserLimit());
             response.setRealNameRequired(true);
             response.setTicketTransferAllowed(!Boolean.FALSE.equals(activity.getTicketTransferAllowed()));
             response.setRefundFullDaysBefore(activity.getRefundFullDaysBefore() == null ? 30 : activity.getRefundFullDaysBefore());

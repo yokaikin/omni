@@ -104,9 +104,7 @@ function buildPurchaseContent(detail: ActivityDetailVO): ActivityDetailTabConten
   const realNameCopy = detail.activity.realNameRequired
     ? '本项目实行实名购票，购票人需准确填写实际入场观演人身份信息。'
     : '本项目暂未强制实名购票，仍建议购票时填写真实有效的联系人信息。'
-  const limitCopy = detail.activity.perUserLimit && detail.activity.perUserLimit > 0
-    ? `每个账号限购 ${detail.activity.perUserLimit} 张，超出数量将无法继续提交订单。`
-    : '限购数量以提交订单时页面提示为准。'
+  const limitCopy = '不设置个人限购，数量以场次库存和下单校验为准。'
   const transferCopy = detail.activity.ticketTransferAllowed
     ? '本项目支持转赠，转赠规则和可操作时间以票夹页面提示为准。'
     : '本项目不支持转赠，请确认观演人信息后再提交订单。'

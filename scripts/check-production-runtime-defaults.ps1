@@ -478,12 +478,12 @@ if ($localCompose -notmatch "(?m)^x-omni-compose-scope:\s*local-development-only
 }
 Write-Host "PASS docker-compose.yml declares local-development-only scope"
 
-if ($localCompose -notmatch "(?m)^\s+ORDER_SERVICE_URL:\s*http://host\.docker\.internal:8083\s*$") {
+if ($localCompose -notmatch "(?m)^\s+ORDER_SERVICE_URL:\s*http://(host\.docker\.internal|java-order):8083\s*$") {
     Write-Host "FAIL docker-compose.yml grab-service ORDER_SERVICE_URL must point directly to local java-order :8083, not Gateway :8088"
     exit 1
 }
 
-if ($localCompose -notmatch "(?m)^\s+TICKET_SERVICE_URL:\s*http://host\.docker\.internal:8082\s*$") {
+if ($localCompose -notmatch "(?m)^\s+TICKET_SERVICE_URL:\s*http://(host\.docker\.internal|java-ticket):8082\s*$") {
     Write-Host "FAIL docker-compose.yml grab-service TICKET_SERVICE_URL must point directly to local java-ticket :8082, not Gateway :8088"
     exit 1
 }

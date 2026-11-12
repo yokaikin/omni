@@ -1,21 +1,21 @@
 package com.omni.ticket.dto;
 
-import java.nio.file.Path;
+import java.io.InputStream;
 
 public class PrivateAssetDownload {
-    private final Path path;
+    private final InputStream inputStream;
     private final String originalFilename;
     private final String contentType;
     private final long fileSize;
 
-    public PrivateAssetDownload(Path path, String originalFilename, String contentType, long fileSize) {
-        this.path = path;
+    public PrivateAssetDownload(InputStream inputStream, String originalFilename, String contentType, long fileSize) {
+        this.inputStream = inputStream;
         this.originalFilename = originalFilename;
         this.contentType = contentType;
         this.fileSize = fileSize;
     }
 
-    public Path getPath() { return path; }
+    public InputStream getInputStream() { return inputStream; }
     public String getOriginalFilename() { return originalFilename; }
     public String getContentType() { return contentType; }
     public long getFileSize() { return fileSize; }

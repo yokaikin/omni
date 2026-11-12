@@ -2,9 +2,12 @@ package com.omni.notification.controller;
 
 import com.omni.common.result.Result;
 import com.omni.common.mq.message.NotificationEventMessage;
+import com.omni.notification.dto.ChannelStatusResponse;
+import com.omni.notification.dto.DirectChannelSendResult;
 import com.omni.notification.dto.InternalNotificationRequest;
 import com.omni.notification.dto.NotificationSummaryResponse;
 import com.omni.notification.entity.Notification;
+import com.omni.notification.service.NotificationChannelService;
 import com.omni.notification.service.NotificationEventService;
 import com.omni.notification.service.NotificationService;
 import io.jsonwebtoken.Claims;
@@ -34,6 +37,18 @@ public class NotificationController {
 
     @Value("${omni.notification.direct-channel.enabled:false}")
     private boolean directChannelEnabled;
+
+    @Value("${omni.notification.sms.provider:disabled}")
+    private String smsProvider;
+
+    @Value("${omni.notification.email.provider:disabled}")
+    private String emailProvider;
+
+    @Value("${omni.object-storage.provider:disabled}")
+    private String objectStorageProvider;
+
+    @Value("${omni.notification.delivery.retry.max-attempts:3}")
+    private int deliveryRetryMaxAttempts;
 
     public NotificationController(NotificationService notificationService,
                                   NotificationEventService notificationEventService,
@@ -68,8 +83,8 @@ public class NotificationController {
      * 发送短信通知
      */
     @PostMapping("/send-sms")
-    public Result<Void> sendSms(@RequestHeader(value = "Authorization", required = false) String authorization,
-                                @RequestBody Map<String, Object> body) {
+    public Result<Notification> sendSms(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                        @RequestBody Map<String, Object> body) {
         Long userId = requireAuthenticatedUserId(authorization);
         if (userId == null) {
             return Result.fail(401, "未登录");
@@ -79,16 +94,16 @@ public class NotificationController {
         }
         Long orderId = body.get("orderId") != null ? Long.valueOf(body.get("orderId").toString()) : null;
         String content = body.get("content").toString();
-        notificationService.sendSms(userId, orderId, content);
-        return Result.success();
+        DirectChannelSendResult result = notificationService.sendSms(userId, orderId, content);
+        return toDirectSendResponse(result, "短信");
     }
 
     /**
      * 发送邮件通知
      */
     @PostMapping("/send-email")
-    public Result<Void> sendEmail(@RequestHeader(value = "Authorization", required = false) String authorization,
-                                  @RequestBody Map<String, Object> body) {
+    public Result<Notification> sendEmail(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                          @RequestBody Map<String, Object> body) {
         Long userId = requireAuthenticatedUserId(authorization);
         if (userId == null) {
             return Result.fail(401, "未登录");
@@ -98,8 +113,41 @@ public class NotificationController {
         }
         Long orderId = body.get("orderId") != null ? Long.valueOf(body.get("orderId").toString()) : null;
         String content = body.get("content").toString();
-        notificationService.sendEmail(userId, orderId, content);
-        return Result.success();
+        DirectChannelSendResult result = notificationService.sendEmail(userId, orderId, content);
+        return toDirectSendResponse(result, "邮件");
+    }
+
+    /**
+     * 渠道配置状态查询（internal）：用于运维确认短信/邮件/对象存储接入情况。
+     */
+    @GetMapping("/internal/channel-status")
+    public Result<ChannelStatusResponse> getChannelStatus(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!StringUtils.hasText(internalApiToken) || !internalApiToken.equals(token)) {
+            return Result.fail(403, "无权限");
+        }
+        ChannelStatusResponse response = new ChannelStatusResponse();
+        response.setSmsProvider(smsProvider);
+        response.setEmailProvider(emailProvider);
+        response.setObjectStorageProvider(objectStorageProvider);
+        response.setDirectChannelEnabled(directChannelEnabled);
+        response.setDeliveryRetryMaxAttempts(deliveryRetryMaxAttempts);
+        return Result.success(response);
+    }
+
+    private Result<Notification> toDirectSendResponse(DirectChannelSendResult result, String channelName) {
+        if (result == null || result.getNotification() == null) {
+            return Result.fail(500, channelName + "发送失败");
+        }
+        if (NotificationChannelService.STATUS_SENT.equals(result.getDeliveryStatus())) {
+            return Result.success(result.getNotification());
+        }
+        if (NotificationChannelService.STATUS_SKIPPED.equals(result.getDeliveryStatus())) {
+            return Result.fail(400, channelName + "渠道未配置: "
+                    + (StringUtils.hasText(result.getFailureReason()) ? result.getFailureReason() : "渠道未启用"));
+        }
+        return Result.fail(502, channelName + "发送失败: "
+                + (StringUtils.hasText(result.getFailureReason()) ? result.getFailureReason() : "未知原因"));
     }
 
     /**

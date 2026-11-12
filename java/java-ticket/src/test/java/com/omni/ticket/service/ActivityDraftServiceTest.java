@@ -73,7 +73,6 @@ class ActivityDraftServiceTest {
         body.put("artistId", 10L);
         body.put("artists", artists);
         body.put("seatMapVisibility", "published");
-        body.put("perUserLimit", "2");
         body.put("realNameRequired", true);
         body.put("ticketTransferAllowed", false);
         body.put("venueApprovalNo", "NO-1");
@@ -92,7 +91,6 @@ class ActivityDraftServiceTest {
         assertEquals(1, activity.getStatus());
         assertEquals(2003L, activity.getOrganizerId());
         assertEquals("published", activity.getSeatMapVisibility());
-        assertEquals(2, activity.getPerUserLimit());
         assertEquals(Boolean.TRUE, activity.getRealNameRequired());
         assertEquals(Boolean.FALSE, activity.getTicketTransferAllowed());
         assertNull(activity.getVenueApplicationId());
@@ -124,21 +122,6 @@ class ActivityDraftServiceTest {
 
         assertSame(activity, response.getActivity());
         assertSame(station, response.getStation());
-    }
-
-    @Test
-    void createDraftRejectsInvalidPerUserLimit() {
-        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
-
-        BusinessException error = assertThrows(BusinessException.class, () -> service.createDraft(2003L, Map.of(
-                "categoryId", 5L,
-                "name", "万象音乐节",
-                "artistId", 10L,
-                "perUserLimit", 0
-        )));
-
-        assertEquals(400, error.getCode());
-        verifyNoInteractions(activityMapper, stationMapper, activityArtistService);
     }
 
     @Test
@@ -176,11 +159,11 @@ class ActivityDraftServiceTest {
         ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
         verify(activityMapper).insert(captor.capture());
         assertEquals("hidden", captor.getValue().getSeatMapVisibility());
-        assertEquals(Boolean.FALSE, captor.getValue().getRealNameRequired());
+        assertEquals(Boolean.TRUE, captor.getValue().getRealNameRequired());
     }
 
     @Test
-    void createDraftSavesNullPerUserLimitWhenMissingOrBlank() {
+    void createDraftIgnoresLegacyPerUserLimitWhenMissingOrBlank() {
         when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
         Map<String, Object> blankLimitBody = new HashMap<>();
         blankLimitBody.put("categoryId", 5L);
@@ -197,8 +180,6 @@ class ActivityDraftServiceTest {
 
         ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
         verify(activityMapper, org.mockito.Mockito.times(2)).insert(captor.capture());
-        assertNull(captor.getAllValues().get(0).getPerUserLimit());
-        assertNull(captor.getAllValues().get(1).getPerUserLimit());
     }
 
     @Test

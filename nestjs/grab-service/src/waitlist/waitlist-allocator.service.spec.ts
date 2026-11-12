@@ -101,4 +101,34 @@ describe('WaitlistAllocatorService', () => {
     expect(orderClient.createWaitlistOfferOrder).toHaveBeenCalledTimes(2);
     expect(notifications.notifyOffered).toHaveBeenCalledWith(expect.objectContaining({ userId: 2005, orderId: 9002 }));
   });
+
+  it('marks the allocation event failed and rethrows on transient order service failure for MQ retry', async () => {
+    const entry = { id: 14, userId: 2006, sessionId: 101, ticketTypeId: 202, quantity: 1, attendeeIds: [503], status: 'ALLOCATING' };
+    const repository = {
+      beginAllocationEvent: jest.fn().mockResolvedValue(true),
+      markOfferExpiredByOrder: jest.fn(),
+      claimNextEntry: jest.fn().mockResolvedValue(entry),
+      markEntryOffered: jest.fn(),
+      createOffer: jest.fn(),
+      markEntryFailed: jest.fn(),
+      restoreAllocatingEntry: jest.fn(),
+      logAllocationAttempt: jest.fn(),
+      markAllocationEventFailed: jest.fn(),
+    };
+    const orderClient = {
+      findByGrabRequestId: jest.fn().mockResolvedValue(null),
+      createWaitlistOfferOrder: jest.fn().mockRejectedValue(new Error('connect ECONNREFUSED')),
+    };
+    const notifications = { notifyOffered: jest.fn(), notifyExpired: jest.fn(), notifyPaid: jest.fn() };
+    const service = new WaitlistAllocatorService(repository as any, orderClient as any, notifications as any);
+
+    await expect(
+      service.allocate({ eventKey: 'release-4', source: 'ORDER_TIMEOUT', sessionId: 101, ticketTypeId: 202, quantity: 1 }),
+    ).rejects.toThrow('connect ECONNREFUSED');
+
+    expect(repository.restoreAllocatingEntry).toHaveBeenCalledWith(14, 'connect ECONNREFUSED');
+    expect(repository.markAllocationEventFailed).toHaveBeenCalledWith('release-4', 'connect ECONNREFUSED');
+    expect(repository.markEntryFailed).not.toHaveBeenCalled();
+    expect(notifications.notifyOffered).not.toHaveBeenCalled();
+  });
 });

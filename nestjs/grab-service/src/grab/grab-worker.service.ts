@@ -1,9 +1,11 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { GrabAdmissionService } from './grab-admission.service';
+import { GrabProgressGateway } from './grab-progress.gateway';
 import { GrabQueueService } from './grab-queue.service';
 import { GrabRepository } from './grab.repository';
 import { GrabStockService } from './grab-stock.service';
+import { GrabWaitEstimatorService } from './grab-wait-estimator.service';
 import { GRAB_STATUS, isTerminalGrabStatus } from './grab-status';
 import type { GrabAttemptSnapshot, GrabRequestRecord, GrabTicketPreference } from './grab.types';
 import { OrderClientService } from './order-client.service';
@@ -55,6 +57,10 @@ class GrabWorkerLatencyTrace {
       `totalMs=${Math.max(0, Date.now() - this.startedAt)}`,
     ].join(' ');
   }
+
+  elapsedMs(): number {
+    return Math.max(0, Date.now() - this.startedAt);
+  }
 }
 
 @Injectable()
@@ -71,6 +77,8 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly orderClient: OrderClientService,
     private readonly queueService: GrabQueueService,
     @Optional() private readonly stockService?: GrabStockService,
+    @Optional() private readonly waitEstimator?: GrabWaitEstimatorService,
+    @Optional() private readonly progressGateway?: GrabProgressGateway,
   ) {}
 
   onModuleInit(): void {
@@ -92,6 +100,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
         const requestId = await this.queueService.dequeue(sessionId);
         if (requestId) {
           await this.processRequest(requestId, sessionId);
+          this.progressGateway?.publishQueueAdvanced(sessionId);
         }
         await this.queueService.removeActiveSessionIfQueueEmpty(sessionId);
       }
@@ -140,6 +149,8 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(error);
     } finally {
       if (shouldAck) await latencyTrace.measure('ack', () => this.ackIfQueued(record));
+      this.waitEstimator?.recordProcessingMs(record.sessionId, latencyTrace.elapsedMs());
+      await this.progressGateway?.publishProgress(record.requestId);
       this.logger.log(latencyTrace.format(record, outcome));
     }
   }
@@ -157,7 +168,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       const preference = effectivePreferences[index];
       if (index > 0) {
         const previous = effectivePreferences[index - 1];
-        const downgraded = await this.repository.updateProgress(record.requestId, {
+        const downgraded = await this.updateProgressAndPublish(record.requestId, {
           status: GRAB_STATUS.DOWNGRADING,
           message: `${this.ticketLabel(previous)}已售罄，正在尝试${this.ticketLabel(preference)}`,
           currentTicketTypeId: preference.ticketTypeId,
@@ -190,7 +201,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     latencyTrace: GrabWorkerLatencyTrace,
   ): Promise<AttemptOutcome> {
     const tryingAttempts = this.markAttempt(attempts, index, 'TRYING', `正在尝试${this.ticketLabel(preference)}`);
-    const tryingRecord = await this.repository.updateProgress(record.requestId, {
+    const tryingRecord = await this.updateProgressAndPublish(record.requestId, {
       status: GRAB_STATUS.TRYING_TICKET_TYPE,
       message: `正在尝试${this.ticketLabel(preference)}`,
       currentTicketTypeId: preference.ticketTypeId,
@@ -201,7 +212,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     if (!tryingRecord) return await this.missingProgressOutcome(record.requestId);
 
     const lockingAttempts = this.markAttempt(attempts, index, 'LOCKING', `正在锁定${this.ticketLabel(preference)}`);
-    const lockingRecord = await this.repository.updateProgress(record.requestId, {
+    const lockingRecord = await this.updateProgressAndPublish(record.requestId, {
       status: GRAB_STATUS.LOCKING,
       message: `正在锁定${this.ticketLabel(preference)}`,
       currentTicketTypeId: preference.ticketTypeId,
@@ -278,7 +289,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       if (idempotentOutcome !== 'CONTINUE') return idempotentOutcome;
     }
 
-    const orderCreatingRecord = await this.repository.updateProgress(record.requestId, {
+    const orderCreatingRecord = await this.updateProgressAndPublish(record.requestId, {
       status: GRAB_STATUS.ORDER_CREATING,
       message: `${this.ticketLabel(preference)}已锁定，正在创建订单`,
       currentTicketTypeId: preference.ticketTypeId,
@@ -461,7 +472,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     attempts: GrabAttemptSnapshot[],
     attemptStatus: GrabAttemptSnapshot['status'],
   ): Promise<boolean> {
-    const updated = await this.repository.updateProgress(record.requestId, {
+    const updated = await this.updateProgressAndPublish(record.requestId, {
       status,
       message,
       currentTicketTypeId: preference.ticketTypeId,
@@ -497,6 +508,15 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     return attempts.map((attempt, attemptIndex) => (
       attemptIndex === index ? { ...attempt, status, message } : attempt
     ));
+  }
+
+  private async updateProgressAndPublish(
+    requestId: string,
+    input: Parameters<GrabRepository['updateProgress']>[1],
+  ): Promise<GrabRequestRecord | null> {
+    const updated = await this.repository.updateProgress(requestId, input);
+    if (updated) await this.progressGateway?.publishProgress(requestId);
+    return updated;
   }
 
   private async ackIfQueued(record: Pick<GrabRequestRecord, 'sessionId' | 'requestId' | 'queueSeq'>): Promise<void> {

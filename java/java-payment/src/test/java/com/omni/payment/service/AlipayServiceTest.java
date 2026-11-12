@@ -5,6 +5,7 @@ import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRule;
 import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRuleManager;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowRule;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowRuleManager;
+import com.alipay.api.AlipayApiException;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.request.AlipayTradePagePayRequest;
 import com.alipay.api.request.AlipayTradePrecreateRequest;
@@ -273,6 +274,35 @@ class AlipayServiceTest {
         assertEquals(false, result.getPaid());
         assertEquals(true, result.getSafeToCancel());
         assertEquals("支付宝未查询到支付交易", result.getMessage());
+    }
+
+    @Test
+    void syncDecisionTreatsAlipayWrappedRuntimeExceptionAsQueryPending() throws Exception {
+        OrderInfoResponse order = order(33L, "DM1012", new BigDecimal("180.00"), 1);
+        when(orderClient.getOrder(33L, "internal-token")).thenReturn(Result.success(order));
+        when(paymentMapper.selectOne(any())).thenReturn(null);
+
+        RuntimeException wrapped = new RuntimeException(
+                new AlipayApiException("RSA2签名遭遇异常 content=alipay_sdk=x&biz_content={\"out_trade_no\":\"DM1012\"}"));
+        when(alipayClient.execute(any(com.alipay.api.request.AlipayTradeQueryRequest.class))).thenThrow(wrapped);
+
+        var result = service.syncDecisionForCancel(33L);
+
+        assertEquals(false, result.getPaid());
+        assertEquals(false, result.getSafeToCancel());
+        assertEquals("支付结果确认中", result.getMessage());
+    }
+
+    @Test
+    void syncByOrderIdPropagatesNonAlipayRuntimeException() throws Exception {
+        OrderInfoResponse order = order(34L, "DM1013", new BigDecimal("180.00"), 1);
+        when(orderClient.getOrder(34L, "internal-token")).thenReturn(Result.success(order));
+        when(paymentMapper.selectOne(any())).thenReturn(null);
+        when(alipayClient.execute(any(com.alipay.api.request.AlipayTradeQueryRequest.class))).thenThrow(new RuntimeException("db down"));
+
+        RuntimeException error = assertThrows(RuntimeException.class, () -> service.syncByOrderId(34L));
+
+        assertEquals("db down", error.getMessage());
     }
 
     @Test
