@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
+import { GrabModule } from '../grab/grab.module';
 import { OrderClientService } from '../grab/order-client.service';
 import { TicketClientService } from '../grab/ticket-client.service';
 import { VisibleStockService } from '../grab/visible-stock.service';
@@ -15,7 +16,7 @@ import { WaitlistRepository } from './waitlist.repository';
 import { WaitlistService } from './waitlist.service';
 
 @Module({
-  imports: [AuthModule, DatabaseModule],
+  imports: [AuthModule, DatabaseModule, GrabModule],
   controllers: [WaitlistController],
   providers: [
     WaitlistService,

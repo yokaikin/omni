@@ -5,6 +5,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.AlipayResponse;
+import com.alipay.api.internal.util.AlipaySignature;
 import com.alipay.api.request.AlipayTradePagePayRequest;
 import com.alipay.api.request.AlipayTradePrecreateRequest;
 import com.alipay.api.request.AlipayTradeQueryRequest;
@@ -28,6 +29,10 @@ import org.mockito.quality.Strictness;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -69,6 +74,26 @@ class PaymentAlipayIntegrationTest {
     }
     Payment payment(Long id, Long orderId, int status, String outTradeNo) {
         Payment p = new Payment(); p.setId(id); p.setOrderId(orderId); p.setStatus(status); p.setOutTradeNo(outTradeNo); p.setPaymentMethod("ALIPAY"); p.setAmount(new BigDecimal("200.00")); return p;
+    }
+
+    Map<String, String> signedNotify(String tradeStatus) throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        KeyPair keyPair = generator.generateKeyPair();
+        props.setAlipayPublicKey(Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded()));
+        String privateKey = Base64.getEncoder().encodeToString(keyPair.getPrivate().getEncoded());
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("app_id", "test-app-id");
+        params.put("notify_id", "notify-123");
+        params.put("trade_status", tradeStatus);
+        params.put("out_trade_no", "ORDER001");
+        params.put("total_amount", "200.00");
+        params.put("trade_no", "TRADE123");
+        params.put("buyer_id", "buyer-123");
+        params.put("sign_type", "RSA2");
+        String signContent = AlipaySignature.getSignCheckContentV1(new LinkedHashMap<>(params));
+        params.put("sign", AlipaySignature.rsaSign(signContent, privateKey, "utf-8", "RSA2"));
+        return params;
     }
 
     // ===== 3.1 Create Payment (PM-001~007) =====
@@ -154,25 +179,41 @@ class PaymentAlipayIntegrationTest {
     @Nested @DisplayName("3.2 Notify")
     class NotifyTests {
         @Test @DisplayName("PM-012: duplicate notify → idempotent")
-        void pm012() {
-            // The handleNotify method validates signature which is static — verified as idempotent via payment status check
+        void pm012() throws Exception {
             Payment p = payment(1L, 100L, PaymentService.STATUS_SUCCESS, "ORDER001");
             p.setTradeNo("TRADE123");
-            // When payment is already SUCCESS with same tradeNo, it re-calls markPaid
-            assertEquals(PaymentService.STATUS_SUCCESS, p.getStatus());
-            assertEquals("TRADE123", p.getTradeNo());
+            when(paymentMapper.selectOne(any())).thenReturn(p);
+            Map<String, String> params = signedNotify("TRADE_SUCCESS");
+            when(paymentMapper.updateById(any())).thenReturn(1);
+
+            assertTrue(svc.handleNotify(new LinkedHashMap<>(params)));
+            assertTrue(svc.handleNotify(new LinkedHashMap<>(params)));
+
+            verify(confirmationService, times(2)).confirmPayment(
+                    eq(p), eq("TRADE123"), eq("buyer-123"), anyString(), anyString());
+            org.mockito.ArgumentCaptor<Payment> updated = org.mockito.ArgumentCaptor.forClass(Payment.class);
+            verify(paymentMapper, times(2)).updateById(updated.capture());
+            assertEquals(PaymentService.STATUS_SUCCESS, updated.getAllValues().get(1).getStatus());
+            assertTrue(updated.getAllValues().get(1).getRawNotify().contains("\"notify_id\":\"notify-123\""));
         }
 
         @Test @DisplayName("PM-014: WAIT_BUYER_PAY → no confirmation")
-        void pm014() {
-            // trade_status != TRADE_SUCCESS/TRADE_FINISHED → returns true without confirming
-            // Verified through the isPaidTradeStatus check
-            assertTrue(true);
+        void pm014() throws Exception {
+            assertTrue(svc.handleNotify(signedNotify("WAIT_BUYER_PAY")));
+            verify(confirmationService, never()).confirmPayment(any(), anyString(), anyString(), anyString(), anyString());
         }
 
         @Test @DisplayName("PM-013: TRADE_FINISHED → treated as paid")
-        void pm013() {
-            assertTrue(true); // Covered by handleNotify logic: TRADE_SUCCESS || TRADE_FINISHED
+        void pm013() throws Exception {
+            Payment pending = payment(1L, 100L, PaymentService.STATUS_PENDING, "ORDER001");
+            when(paymentMapper.selectOne(any())).thenReturn(pending);
+            when(orderClient.getOrder(eq(100L), any())).thenReturn(
+                    Result.success(order(100L, 1, bd("200"), "ORDER001")));
+
+            assertTrue(svc.handleNotify(signedNotify("TRADE_FINISHED")));
+
+            verify(confirmationService).confirmPayment(
+                    eq(pending), eq("TRADE123"), eq("buyer-123"), anyString(), anyString());
         }
     }
 

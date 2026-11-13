@@ -172,6 +172,14 @@ export class GrabRepository {
     return result.rows[0] ? this.mapRow(result.rows[0]) : null;
   }
 
+  async findByOrderId(orderId: number): Promise<GrabRequestRecord[]> {
+    const result = await this.database.query<GrabRequestRow>(
+      `select * from grab_request where order_id = $1 order by id asc`,
+      [orderId],
+    );
+    return result.rows.map((row) => this.mapRow(row));
+  }
+
   async listByUser(userId: number, limit: number): Promise<GrabRequestRecord[]> {
     const result = await this.database.query<GrabRequestRow>(
       `select * from grab_request

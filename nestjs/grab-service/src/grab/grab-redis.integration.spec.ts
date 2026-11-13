@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from 'crypto';
 
-import { GrabAdmissionService } from './grab-admission.service';
+import { GrabAdmissionService, type AdmitInput } from './grab-admission.service';
 import { GrabQueueService } from './grab-queue.service';
 import { RedisService } from './redis.service';
 
@@ -26,6 +26,7 @@ describeRedisIntegration('grab redis integration', () => {
   let queue: GrabQueueService;
   let admission: GrabAdmissionService;
   let ids: TestIds;
+  let concurrentInputs: AdmitInput[];
 
   beforeAll(() => {
     redis = new RedisService();
@@ -35,6 +36,7 @@ describeRedisIntegration('grab redis integration', () => {
 
   beforeEach(async () => {
     ids = createIds();
+    concurrentInputs = [];
     await cleanup(ids);
   });
 
@@ -124,7 +126,11 @@ describeRedisIntegration('grab redis integration', () => {
     ).resolves.toEqual({ outcome: 'ACCEPTED', existingRequestId: ids.requestId });
     await expect(redis.get(stockKey(ids))).resolves.toBe('1');
 
-    await redis.del([idempotencyKey(ids), userHoldKey(ids), seatHoldKey(ids.seatId)]);
+    await redis.del([
+      idempotencyKey(ids.userId, ids.idempotencyKey),
+      userHoldKey(ids.userId, ids.sessionId, ids.ticketTypeId),
+      seatHoldKey(ids.seatId),
+    ]);
 
     await admission.release({
       requestId: ids.requestId,
@@ -149,6 +155,44 @@ describeRedisIntegration('grab redis integration', () => {
     await expect(redis.get(stockKey(ids))).resolves.toBe('3');
   });
 
+  it('admits no more buyers than stock under 100 concurrent requests and keeps retries idempotent', async () => {
+    const inventory = 10;
+    const contenderCount = 100;
+    await redis.set(stockKey(ids), String(inventory));
+
+    concurrentInputs = Array.from({ length: contenderCount }, (_, index) => ({
+      requestId: `${ids.requestId}-buyer-${index}`,
+      userId: ids.userId + index,
+      sessionId: ids.sessionId,
+      ticketTypeId: ids.ticketTypeId,
+      quantity: 1,
+      seatIds: [],
+      idempotencyKey: `${ids.idempotencyKey}-buyer-${index}`,
+      ttlSeconds: 60,
+    }));
+
+    const startedAt = process.hrtime.bigint();
+    const results = await Promise.all(concurrentInputs.map((input) => admission.admit(input)));
+    const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    const accepted = results.filter((result) => result.outcome === 'ACCEPTED');
+    const soldOut = results.filter((result) => result.outcome === 'SOLD_OUT');
+
+    expect(results).toHaveLength(contenderCount);
+    expect(accepted).toHaveLength(inventory);
+    expect(soldOut).toHaveLength(contenderCount - inventory);
+    expect(results.every((result) => result.outcome === 'ACCEPTED' || result.outcome === 'SOLD_OUT')).toBe(true);
+    await expect(redis.get(stockKey(ids))).resolves.toBe('0');
+
+    const acceptedInputs = concurrentInputs.filter((input) => accepted.some((result) => result.existingRequestId === input.requestId));
+    const retries = await Promise.all(acceptedInputs.map((input) => admission.admit(input)));
+    expect(retries).toHaveLength(inventory);
+    expect(retries.every((result) => result.outcome === 'IDEMPOTENT')).toBe(true);
+    expect(new Set(retries.map((result) => result.existingRequestId)).size).toBe(inventory);
+    await expect(redis.get(stockKey(ids))).resolves.toBe('0');
+
+    console.info(`并发准入验收：请求=${contenderCount}，库存=${inventory}，成功=${accepted.length}，售罄=${soldOut.length}，耗时=${elapsedMs.toFixed(1)}ms`);
+  });
+
   async function cleanup(target: TestIds | undefined): Promise<void> {
     if (!target) return;
 
@@ -160,11 +204,16 @@ describeRedisIntegration('grab redis integration', () => {
       requestKey(target.requestId),
       requestKey(target.secondRequestId),
       stockKey(target),
-      idempotencyKey(target),
-      userHoldKey(target),
+      idempotencyKey(target.userId, target.idempotencyKey),
+      userHoldKey(target.userId, target.sessionId, target.ticketTypeId),
       admissionKey(target.requestId),
       admissionKey(target.secondRequestId),
       seatHoldKey(target.seatId),
+      ...concurrentInputs.flatMap((input) => [
+        idempotencyKey(input.userId, input.idempotencyKey),
+        userHoldKey(input.userId, input.sessionId, input.ticketTypeId),
+        admissionKey(input.requestId),
+      ]),
     ]);
     await redis.srem(activeSessionsKey(), String(target.sessionId));
   }
@@ -213,12 +262,12 @@ function stockKey(ids: Pick<TestIds, 'sessionId' | 'ticketTypeId'>): string {
   return `grab:stock:${ids.sessionId}:${ids.ticketTypeId}`;
 }
 
-function idempotencyKey(ids: Pick<TestIds, 'userId' | 'idempotencyKey'>): string {
-  return `grab:idempotency:${ids.userId}:${ids.idempotencyKey}`;
+function idempotencyKey(userId: number, key: string): string {
+  return `grab:idempotency:${userId}:${key}`;
 }
 
-function userHoldKey(ids: Pick<TestIds, 'userId' | 'sessionId' | 'ticketTypeId'>): string {
-  return `grab:user-hold:${ids.userId}:${ids.sessionId}:${ids.ticketTypeId}`;
+function userHoldKey(userId: number, sessionId: number, ticketTypeId: number): string {
+  return `grab:user-hold:${userId}:${sessionId}:${ticketTypeId}`;
 }
 
 function admissionKey(requestId: string): string {

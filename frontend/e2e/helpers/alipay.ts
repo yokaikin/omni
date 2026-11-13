@@ -1,12 +1,12 @@
 import type { Page } from '@playwright/test'
 import { expect } from '@playwright/test'
-import { ALIPAY_BUYER_LOGON, ALIPAY_PAY_PASSWORD } from './env'
-import { apiDelete, apiGet, type ApiResult } from './api'
+import { ALIPAY_BUYER_LOGON, ALIPAY_BUYER_PASSWORD, ALIPAY_PAY_PASSWORD, BASE_URL } from './env'
+import { apiGet, type ApiResult } from './api'
 import type { OrderRecord } from './purchase'
 
 /**
  * 沙箱收银台弹窗内完成付款（真实页面流程，v3-v12 逆向验证）：
- * 1. auth.htm「账户付款」页：账号（服务端可能预填锁定为 oar***@sandbox.com，可不填）+ 支付密码 → 下一步
+ * 1. auth.htm「账户付款」页：账号（服务端可能预填锁定为 oar***@sandbox.com，可不填）+ 买家登录密码 → 下一步
  * 2. lightPayCashier.htm 确认页：等安全检测通过 → 6 位支付密码 → 确认付款
  * 注意：支付宝密码控件必须用 pressSequentially（fill 无效）；
  * 输入确认页密码后安全控件会清空提交按钮的 name 属性，需按 value 定位。
@@ -26,7 +26,7 @@ async function payOnSandboxCashier(popup: Page): Promise<void> {
   const payPasswordInput = popup.locator('input[name="payPasswd_rsainput"]')
   await expect(payPasswordInput).toBeVisible({ timeout: 30_000 })
   await payPasswordInput.click()
-  await payPasswordInput.pressSequentially(ALIPAY_PAY_PASSWORD, { delay: 120 })
+  await payPasswordInput.pressSequentially(ALIPAY_BUYER_PASSWORD, { delay: 120 })
   // 输入后必须 blur + 等待：安全控件内部状态就绪前点"下一步"会被静默拦截（无网络请求、无导航）
   await payPasswordInput.blur()
   await popup.waitForTimeout(4_000)
@@ -54,19 +54,14 @@ async function payOnSandboxCashier(popup: Page): Promise<void> {
  * 返回支付后的订单（status=2）。
  */
 export async function payOrderViaUi(page: Page, token: string, order: OrderRecord): Promise<OrderRecord> {
-  // 取消除目标订单外的旧待支付订单：旧订单的支付宝交易已过 15m 有效期，
-  // 留在列表会让"待支付 tab 第一个立即支付"命中过期交易
-  const allOrders: ApiResult<OrderRecord[]> = await apiGet<OrderRecord[]>('/api/order/my', token)
-  for (const stale of allOrders.data.filter(o => o.status === 1 && o.id !== order.id)) {
-    await apiDelete(`/api/order/${stale.id}`, token)
-  }
-
   await page.goto('/orders')
   await expect(page.getByText('我的订单').first()).toBeVisible({ timeout: 60_000 })
 
-  // 待支付 tab → 目标订单的立即支付按钮（最新待支付订单排最前）
+  // 按订单号定位目标卡片，避免误操作列表中的其他待支付订单
   await page.getByRole('button', { name: '待支付' }).click()
-  const payButton = page.getByRole('button', { name: '立即支付' }).first()
+  const orderCard = page.locator('div.rounded-3xl').filter({ hasText: order.orderNo }).first()
+  await expect(orderCard).toBeVisible({ timeout: 30_000 })
+  const payButton = orderCard.getByRole('button', { name: '立即支付', exact: true })
   await expect(payButton).toBeVisible({ timeout: 30_000 })
   await payButton.click()
 
@@ -84,8 +79,11 @@ export async function payOrderViaUi(page: Page, token: string, order: OrderRecor
 
   await payOnSandboxCashier(popup)
 
-  // 支付完成后收银台跳回 return_url（localhost:3000/payment/result）
-  await popup.waitForURL(/localhost:3000\/payment\/result/, { timeout: 120_000 }).catch(() => undefined)
+  // 支付完成后回到与 E2E 前端相同的站点，允许本地和 staging 使用不同域名
+  const returnUrl = new URL('/payment/result', BASE_URL)
+  await popup.waitForURL(url => url.origin === returnUrl.origin && url.pathname === returnUrl.pathname, {
+    timeout: 120_000,
+  }).catch(() => undefined)
 
   // 支付弹窗 3 秒轮询 sync 自动确认并关闭
   await expect(payModal).toBeHidden({ timeout: 60_000 })

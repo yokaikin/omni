@@ -379,8 +379,8 @@ foreach ($svc in $servicesWithJwt) {
 
 $notificationProdFile = Join-Path -Path $repoRoot -ChildPath "java/java-notification/src/main/resources/application-prod-split.yml"
 $notificationProd = Get-Content -Raw -LiteralPath $notificationProdFile
-if ($notificationProd -notmatch "(?ms)^omni:\s*\r?\n\s+notification:\s*\r?\n\s+direct-channel:\s*\r?\n\s+enabled:\s*false\s*$") {
-    Write-Host "FAIL java-notification prod-split: omni.notification.direct-channel.enabled must be false"
+if ($notificationProd -notmatch "(?ms)^omni:\s*\r?\n\s+notification:\s*\r?\n\s+direct-channel:\s*\r?\n\s+enabled:\s*\$\{OMNI_NOTIFICATION_DIRECT_CHANNEL_ENABLED:false\}\s*$") {
+    Write-Host "FAIL java-notification prod-split: direct channels must remain disabled unless explicitly enabled by environment"
     exit 1
 }
 

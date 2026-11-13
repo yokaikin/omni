@@ -3,6 +3,7 @@ package com.omni.notification.controller;
 import com.omni.common.result.Result;
 import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.notification.dto.ChannelStatusResponse;
+import com.omni.notification.dto.NotificationDeliveryStatusResponse;
 import com.omni.notification.entity.Notification;
 import com.omni.notification.service.NotificationEventService;
 import com.omni.notification.service.NotificationService;
@@ -255,6 +256,50 @@ class NotificationControllerAuthTest {
         assertEquals("minio", result.getData().getObjectStorageProvider());
         assertEquals(true, result.getData().isDirectChannelEnabled());
         assertEquals(5, result.getData().getDeliveryRetryMaxAttempts());
+    }
+
+    @Test
+    void deliveryStatusRequiresInternalToken() {
+        NotificationService service = mock(NotificationService.class);
+        NotificationEventService eventService = mock(NotificationEventService.class);
+        NotificationController controller = new NotificationController(service, eventService, "internal-token", SECRET);
+
+        Result<NotificationDeliveryStatusResponse> result =
+                controller.getDeliveryStatus("evt-1", "SMS", null);
+
+        assertEquals(403, result.getCode());
+        verify(eventService, never()).getDeliveryStatus(any(), any());
+    }
+
+    @Test
+    void deliveryStatusOnlyAcceptsSmsOrEmailAndReturnsNarrowResponse() {
+        NotificationService service = mock(NotificationService.class);
+        NotificationEventService eventService = mock(NotificationEventService.class);
+        NotificationController controller = new NotificationController(service, eventService, "internal-token", SECRET);
+        NotificationDeliveryStatusResponse status = new NotificationDeliveryStatusResponse();
+        status.setEventId("evt-1");
+        status.setChannel("SMS");
+        status.setStatus("SENT");
+        status.setProviderMessageId("provider-1");
+        status.setRetryCount(1);
+        when(eventService.getDeliveryStatus("evt-1", "SMS")).thenReturn(status);
+
+        Result<NotificationDeliveryStatusResponse> result =
+                controller.getDeliveryStatus(" evt-1 ", " sms ", "internal-token");
+        Result<NotificationDeliveryStatusResponse> invalid =
+                controller.getDeliveryStatus("evt-1", "IN_APP", "internal-token");
+        Result<NotificationDeliveryStatusResponse> oversized =
+                controller.getDeliveryStatus("x".repeat(121), "SMS", "internal-token");
+
+        assertEquals(200, result.getCode());
+        assertEquals("SENT", result.getData().getStatus());
+        assertEquals("provider-1", result.getData().getProviderMessageId());
+        assertEquals(1, result.getData().getRetryCount());
+        assertEquals(400, invalid.getCode());
+        assertEquals(400, oversized.getCode());
+        verify(eventService).getDeliveryStatus("evt-1", "SMS");
+        verify(eventService, never()).getDeliveryStatus("evt-1", "IN_APP");
+        verify(eventService, never()).getDeliveryStatus("x".repeat(121), "SMS");
     }
 
     private static NotificationController controller(NotificationService service) {

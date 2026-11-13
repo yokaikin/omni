@@ -39,6 +39,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -68,6 +69,9 @@ public class AlipayService {
     private final PaymentConfirmationService paymentConfirmationService;
     private final String internalApiToken;
     private final Supplier<AlipayClient> alipayClientFactory;
+
+    @Value("${omni.payment.mock.enabled:false}")
+    private boolean mockPaymentEnabled;
 
     @Autowired
     public AlipayService(AlipayProperties alipayProperties,
@@ -314,8 +318,12 @@ public class AlipayService {
                 return false;
             }
             try {
-                completePayment(payment, tradeNo, buyerId, toMapString(params), toMapString(params));
-                return true;
+                String verifiedNotify = toMapString(params);
+                completePayment(payment, tradeNo, buyerId, verifiedNotify, verifiedNotify);
+                payment.setNotifyTime(LocalDateTime.now());
+                payment.setRawNotify(verifiedNotify);
+                payment.setCallbackData(verifiedNotify);
+                return paymentMapper.updateById(payment) > 0;
             } catch (RuntimeException e) {
                 log.warn("支付宝通知幂等确认订单支付失败: outTradeNo={}, orderId={}", outTradeNo, payment.getOrderId(), e);
                 return false;
@@ -391,7 +399,10 @@ public class AlipayService {
         boolean paid = PaymentService.STATUS_SUCCESS == status.getPaymentStatus()
                 || ORDER_STATUS_PAID.equals(status.getOrderStatus());
         response.setPaid(paid);
-        response.setSafeToCancel(!paid && Boolean.TRUE.equals(status.getStatusConfirmed()));
+        boolean localMockCanCancel = mockPaymentEnabled
+                && !paid
+                && ORDER_STATUS_PENDING.equals(status.getOrderStatus());
+        response.setSafeToCancel(!paid && (Boolean.TRUE.equals(status.getStatusConfirmed()) || localMockCanCancel));
         return response;
     }
 

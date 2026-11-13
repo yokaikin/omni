@@ -6,6 +6,7 @@ import { GrabCompensationService } from './grab-compensation.service';
 import { GrabController, GrabInternalController, GrabSessionController } from './grab.controller';
 import { GrabOpsController } from './grab-ops.controller';
 import { GrabOpsService } from './grab-ops.service';
+import { GrabOrderReleaseService } from './grab-order-release.service';
 import { GrabProgressGateway } from './grab-progress.gateway';
 import { GrabQueueService } from './grab-queue.service';
 import { GrabRepository } from './grab.repository';
@@ -28,6 +29,7 @@ import { VisibleStockService } from './visible-stock.service';
     GrabAdmissionService,
     GrabCompensationService,
     GrabOpsService,
+    GrabOrderReleaseService,
     GrabQueueService,
     GrabWaitEstimatorService,
     GrabWorkerService,
@@ -37,6 +39,6 @@ import { VisibleStockService } from './visible-stock.service';
     TicketClientService,
     VisibleStockService,
   ],
-  exports: [GrabService],
+  exports: [GrabService, GrabOrderReleaseService, GrabAdmissionService, GrabRepository, GrabStockService],
 })
 export class GrabModule {}

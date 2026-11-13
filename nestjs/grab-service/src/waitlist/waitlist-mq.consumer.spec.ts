@@ -58,6 +58,37 @@ describe('WaitlistMqConsumer', () => {
     expect(channel.ack).not.toHaveBeenCalled();
   });
 
+  it('processes an order cancellation release before waitlist allocation', async () => {
+    const allocator = { allocate: jest.fn().mockResolvedValue({ status: 'NO_ENTRY' }), markPaidByOrder: jest.fn() };
+    const grabRelease = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
+    const consumer = new WaitlistMqConsumer(allocator as any, grabRelease as any);
+    const channel = { ack: jest.fn(), reject: jest.fn(), publish: jest.fn() };
+    const event = { eventKey: 'order-cancel:9001:session:101:ticket-type:202', source: 'ORDER_CANCEL', sourceOrderId: 9001, sessionId: 101, ticketTypeId: 202, quantity: 1 };
+
+    await (consumer as any).handleReleasedMessage(channel, message(event));
+
+    expect(grabRelease.releaseForOrder).toHaveBeenCalledWith(event);
+    expect(allocator.allocate).toHaveBeenCalledWith(event);
+    expect(channel.ack).toHaveBeenCalled();
+  });
+
+  it('moves unknown release sources to the dead-letter queue', async () => {
+    const allocator = { allocate: jest.fn() };
+    const consumer = new WaitlistMqConsumer(allocator as any);
+    const channel = { ack: jest.fn(), reject: jest.fn(), publish: jest.fn() };
+    const msg = message({ eventKey: 'release-1', source: 'UNKNOWN', sessionId: 101, ticketTypeId: 202, quantity: 1 });
+
+    await (consumer as any).handleReleasedMessage(channel, msg);
+
+    expect(allocator.allocate).not.toHaveBeenCalled();
+    expect(channel.publish).toHaveBeenCalledWith(
+      'omni.waitlist.dlx',
+      'waitlist.released.dlq',
+      msg.content,
+      expect.objectContaining({ persistent: true }),
+    );
+  });
+
   it('moves a waitlist release message to dlq after retry limit is reached', async () => {
     const allocator = { allocate: jest.fn().mockRejectedValue(new Error('still failing')) };
     const consumer = new WaitlistMqConsumer(allocator as any);

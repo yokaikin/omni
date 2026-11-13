@@ -29,6 +29,8 @@ import com.omni.order.mapper.OrderMapper;
 import com.omni.order.mapper.OrderAttendeeMapper;
 import com.omni.order.mapper.OrderSeatMapper;
 import com.omni.order.mapper.OrderSnapshotMapper;
+import com.omni.order.mq.WaitlistMqProducer;
+import com.omni.common.mq.message.WaitlistReleasedMessage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -1869,6 +1871,30 @@ class OrderServiceTest {
         assertEquals(List.of(301L), captor.getValue().getSeatIds());
         assertEquals("TEAM-GRAB-1", captor.getValue().getLockRequestId());
         assertEquals(4, lockedSeat.getStatus());
+    }
+
+    @Test
+    void cancelOrderPublishesDistinctOrderCancelReleaseEvent() {
+        WaitlistMqProducer producer = org.mockito.Mockito.mock(WaitlistMqProducer.class);
+        service = new OrderService(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient,
+                ticketSalesInternalClient, userInternalClient, producer, orderAttendeeMapper);
+        Order order = pendingOrder(2104L, 101L, 1L);
+        when(orderMapper.selectById(2104L)).thenReturn(order);
+        when(paymentInternalClient.syncOrderForCancel(2104L, "test-internal-token"))
+                .thenReturn(Result.success(safeToCancelDecision()));
+        when(orderMapper.updateStatusIfCurrent(2104L, OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED))
+                .thenReturn(1);
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of());
+        when(ticketSalesInternalClient.release(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
+
+        service.cancelOrder(2104L);
+
+        ArgumentCaptor<WaitlistReleasedMessage> captor = ArgumentCaptor.forClass(WaitlistReleasedMessage.class);
+        verify(producer).sendReleasedEvent(captor.capture());
+        assertEquals("ORDER_CANCEL", captor.getValue().getSource());
+        assertEquals("order-cancel:2104:session:101:ticket-type:1", captor.getValue().getEventKey());
+        assertEquals(2104L, captor.getValue().getSourceOrderId());
     }
 
     @Test

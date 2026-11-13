@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { ACCOUNTS } from './helpers/env'
+import { ACCOUNTS, SOLD_OUT_ACTIVITY } from './helpers/env'
 import { apiGet, buildStorageState, loginViaApi, updateState, type ApiResult } from './helpers/api'
 
 interface WaitlistEntry {
@@ -8,13 +8,6 @@ interface WaitlistEntry {
   ticketTypeId: number
   status: string
   rank?: number | null
-}
-
-/** 售罄场次：加入候补场景使用（activity 900116 李泉爵士流行音乐会 天津站，session 910116 票已全部售罄） */
-const SOLD_OUT_ACTIVITY = {
-  activityId: 900116,
-  sessionId: 910116,
-  ticketTypeId: 920348, // 普通票
 }
 
 test('候补闭环：售罄场次购买失败 → 加入候补 → 查看候补 → 取消候补', async ({ browser }) => {

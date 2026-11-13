@@ -3,9 +3,11 @@ package com.omni.notification.service;
 import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.exception.BusinessException;
 import com.omni.notification.dto.InternalNotificationRequest;
+import com.omni.notification.dto.NotificationDeliveryStatusResponse;
 import com.omni.notification.entity.Notification;
 import com.omni.notification.entity.NotificationDelivery;
 import com.omni.notification.mapper.NotificationDeliveryMapper;
+import com.omni.notification.sms.SmsTemplateProperties;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -18,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -37,6 +40,7 @@ class NotificationEventServiceTest {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
             context.registerBean(NotificationDeliveryMapper.class, () -> deliveryMapper);
             context.registerBean(NotificationService.class, () -> notificationService);
+            context.registerBean(SmsTemplateProperties.class, SmsTemplateProperties::new);
             context.register(NotificationEventService.class);
 
             context.refresh();
@@ -135,6 +139,28 @@ class NotificationEventServiceTest {
     }
 
     @Test
+    void processEventUsesConfiguredSmsTemplateCodeWhenEventHasNoExplicitCode() {
+        SmsTemplateProperties templates = new SmsTemplateProperties();
+        templates.getTemplateCodes().put("REFUND_UNKNOWN", "SMS_987654");
+        NotificationEventService configuredService = new NotificationEventService(
+                deliveryMapper, notificationService, new com.fasterxml.jackson.databind.ObjectMapper(), templates);
+        NotificationEventMessage message = eventMessage();
+        message.setTemplateCode(null);
+        message.setEventType("refund_unknown");
+        message.setChannels(List.of("IN_APP", "SMS"));
+        when(deliveryMapper.selectOne(any())).thenReturn(null);
+        when(notificationService.createInternalMessage(any())).thenReturn(new Notification());
+
+        configuredService.processEvent(message);
+
+        ArgumentCaptor<NotificationDelivery> deliveryCaptor = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryMapper, times(2)).insert(deliveryCaptor.capture());
+        List<NotificationDelivery> deliveries = deliveryCaptor.getAllValues();
+        assertNull(deliveries.get(0).getTemplateCode());
+        assertEquals("SMS_987654", deliveries.get(1).getTemplateCode());
+    }
+
+    @Test
     void processEventRecordsPendingEmailDeliveryForRetry() {
         NotificationEventMessage message = eventMessage();
         message.setChannels(List.of("EMAIL"));
@@ -147,6 +173,27 @@ class NotificationEventServiceTest {
         assertEquals("EMAIL", emailDelivery.getChannel());
         assertEquals("PENDING", emailDelivery.getStatus());
         assertNull(emailDelivery.getSentTime());
+    }
+
+    @Test
+    void getDeliveryStatusDoesNotExposeContentOrPayload() throws Exception {
+        NotificationDelivery delivery = new NotificationDelivery();
+        delivery.setEventId("evt-1");
+        delivery.setChannel("SMS");
+        delivery.setStatus("SENT");
+        delivery.setProviderMessageId("provider-1");
+        delivery.setContentSnapshot("private message");
+        delivery.setPayloadJson("{\"phone\":\"private\"}");
+        when(deliveryMapper.selectOne(any())).thenReturn(delivery);
+
+        NotificationDeliveryStatusResponse response = service.getDeliveryStatus("evt-1", "SMS");
+        String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(response);
+
+        assertEquals("SENT", response.getStatus());
+        assertFalse(json.contains("private message"));
+        assertFalse(json.contains("private"));
+        assertFalse(json.contains("contentSnapshot"));
+        assertFalse(json.contains("payloadJson"));
     }
 
     @Test

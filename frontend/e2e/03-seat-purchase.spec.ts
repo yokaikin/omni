@@ -12,7 +12,7 @@ test('C端座位购买闭环：选票下单生成待支付订单', async ({ brow
   const page = await context.newPage()
 
   // 清理历史遗留的待支付订单（避免限购 LIMITED 拦截），再快照订单集合
-  await cancelPendingOrders(login.token)
+  await cancelPendingOrders(login.token, ACCOUNTS.user.userId)
   const beforeIds = await snapshotOrderIds(login.token)
 
   await warmUpDevPage(page, `/activity/${MAIN_ACTIVITY.activityId}`, '选择票档')

@@ -1,8 +1,9 @@
-import type { Page, BrowserContext } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import { expect } from '@playwright/test'
 import { execSync } from 'node:child_process'
-import { MAIN_ACTIVITY, ACCOUNTS } from './env'
-import { apiDelete, apiGet, apiPost, type ApiResult } from './api'
+import { BASE_URL, GATEWAY_URL, MAIN_ACTIVITY } from './env'
+import { apiDelete, apiGet, apiPost, readState, updateState, type ApiResult } from './api'
+import { splitOwnedPendingOrders } from './purchase-order-policy'
 
 export interface OrderRecord {
   id: number
@@ -93,6 +94,8 @@ export async function purchaseTicketViaUi(page: Page, token: string, beforeIds: 
   // API 侧等待新订单落库（ORDER_CREATED 后 UI 会自动打开支付弹窗并关闭进度弹窗）
   const order = await waitForNewOrder(token, beforeIds, 120_000)
   expect(order.status).toBe(1)
+  const ownedOrderIds = readState().e2eOwnedOrderIds || []
+  updateState({ e2eOwnedOrderIds: [...new Set([...ownedOrderIds, order.id])] })
 
   // 支付弹窗应自动打开并显示新订单号
   const payModal = page.getByRole('dialog').filter({ hasText: '支付宝支付' })
@@ -113,25 +116,36 @@ export async function snapshotOrderIds(token: string): Promise<Set<number>> {
 }
 
 /**
- * 清理历史遗留的待支付订单（占限购名额会触发 LIMITED 拒单）。
- * 同时清除 grab-service 的 Redis user-hold（订单创建成功后不随取消释放，需等 900s TTL，
- * 会把同票档的重复购买全部挡成 LIMITED）。
- * 必须在每次购票前调用，保证用例可重复执行。
+ * 仅清理 E2E 状态文件登记的本用例待支付订单，保护其他本地订单。
  */
-export async function cancelPendingOrders(token: string): Promise<void> {
+export async function cancelPendingOrders(token: string, userId: number): Promise<void> {
   const api: ApiResult<OrderRecord[]> = await apiGet<OrderRecord[]>('/api/order/my', token)
   const pending = api.data.filter(
     order => order.status === 1 && order.sessionId === MAIN_ACTIVITY.sessionId && order.ticketTypeId === MAIN_ACTIVITY.ticketTypeId,
   )
-  for (const order of pending) {
-    await apiDelete(`/api/order/${order.id}`, token)
+  const state = readState()
+  const { owned: ownedPending, unowned: unownedPending } = splitOwnedPendingOrders(
+    pending,
+    state.e2eOwnedOrderIds || [],
+  )
+  if (unownedPending.length > 0) {
+    throw new Error(`发现 ${unownedPending.length} 笔非本 E2E 创建的待支付订单，为保护本地数据已停止购票；请自行处理后重试`)
   }
-  clearGrabUserHold()
+  for (const order of ownedPending) {
+    const result = await apiDelete(`/api/order/${order.id}`, token)
+    if (result.code !== 200) {
+      throw new Error(`取消本 E2E 待支付订单失败: orderId=${order.id}, code=${result.code}`)
+    }
+  }
+  updateState({ e2eOwnedOrderIds: (state.e2eOwnedOrderIds || []).filter(id => !ownedPending.some(order => order.id === id)) })
+  if (ownedPending.length > 0) clearGrabUserHold(userId)
 }
 
-/** 删除 grab:user-hold:{userId}:{sessionId}:{ticketTypeId}（Redis 未发布端口，经 docker exec） */
-export function clearGrabUserHold(): void {
-  const key = `grab:user-hold:${ACCOUNTS.user.userId}:${MAIN_ACTIVITY.sessionId}:${MAIN_ACTIVITY.ticketTypeId}`
+/** 只在本地 E2E 环境清除本机 Docker Redis 中对应专用测试账号的 hold。 */
+export function clearGrabUserHold(userId: number): void {
+  const localHosts = new Set(['localhost', '127.0.0.1', '::1'])
+  if (![BASE_URL, GATEWAY_URL].every(endpoint => localHosts.has(new URL(endpoint).hostname))) return
+  const key = `grab:user-hold:${userId}:${MAIN_ACTIVITY.sessionId}:${MAIN_ACTIVITY.ticketTypeId}`
   try {
     execSync(`docker exec omni-redis redis-cli DEL ${key}`, { stdio: 'ignore' })
   } catch {

@@ -389,6 +389,7 @@ if (-not $SkipJava) {
         $fullPath = Join-Path $projectRoot $svc.Path
         Write-Host "Starting $($svc.Name) on port $($svc.Port)..." -ForegroundColor Cyan
         $smsMockArg = if ($svc.Name -eq "java-user") { " --omni.sms.mock.enabled=true" } else { "" }
+        $paymentMockArg = if ($svc.Name -eq "java-payment") { " --omni.payment.mock.enabled=true" } else { "" }
         $grabServiceUrlArg = if ($svc.Name -eq "java-user") { " --omni.grab-service.url=http://localhost:3001" } else { "" }
         $searchArg = if ($svc.Name -eq "java-ticket") { " --spring.elasticsearch.uris=$env:SPRING_ELASTICSEARCH_URIS --omni.search.provider=elasticsearch --omni.search.require-elasticsearch=true" } else { "" }
         if ($svc.Name -eq "java-ticket" -and -not [string]::IsNullOrWhiteSpace($env:ELASTICSEARCH_USERNAME)) {
@@ -396,11 +397,11 @@ if (-not $SkipJava) {
         }
         $servicePathArg = Quote-PowerShellString $fullPath
         $sharedDbUrlArg = if ($UseSharedDatabase) { " --spring.datasource.url=jdbc:postgresql://localhost:5432/omni_ticket" } else { "" }
-        $defaultRunArguments = "--spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$sharedDbUrlArg$smsMockArg$searchArg"
+        $defaultRunArguments = "--spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$sharedDbUrlArg$smsMockArg$paymentMockArg$searchArg"
         $command = "Set-Location -LiteralPath $servicePathArg; mvn spring-boot:run $(Quote-PowerShellString "-Dspring-boot.run.arguments=$defaultRunArguments")"
         if (-not $UseSharedDatabase -and $svc.Database) {
             $seataArg = if ($svc.Name -in @("java-ticket", "java-order", "java-payment")) { " --seata.enabled=true" } else { "" }
-            $prodSplitRunArguments = "--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=$internalApiToken --jwt.secret=$jwtSecret --NACOS_HOST=localhost --NACOS_PORT=$nacosPort --spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$smsMockArg$grabServiceUrlArg$searchArg$seataArg"
+            $prodSplitRunArguments = "--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=$internalApiToken --jwt.secret=$jwtSecret --NACOS_HOST=localhost --NACOS_PORT=$nacosPort --spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$smsMockArg$paymentMockArg$grabServiceUrlArg$searchArg$seataArg"
             $command = "Set-Location -LiteralPath $servicePathArg; mvn spring-boot:run $(Quote-PowerShellString "-Dspring-boot.run.profiles=prod-split") $(Quote-PowerShellString "-Dspring-boot.run.arguments=$prodSplitRunArguments")"
         }
         Start-Service-InBackground -Name $svc.Name -Command $command -WorkDir $fullPath

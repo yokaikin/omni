@@ -859,7 +859,12 @@ public class OrderService {
         }
         assertPendingOrderSafeToCancel(order);
         cancelPendingOrderOrThrow(order);
-        releaseLockedResourcesStrict(order);
+        TicketReleasedEvent releaseEvent = releaseLockedResourcesStrict(order);
+        if (releaseEvent != null) {
+            releaseEvent.setSource("ORDER_CANCEL");
+            releaseEvent.setEventKey(orderCancelEventKey(order));
+            publishWaitlistReleaseEvent(releaseEvent);
+        }
         markOrderAttendeesStatus(order.getId(), ORDER_ATTENDEE_CANCELLED);
         log.info("订单已取消: orderNo={}", order.getOrderNo());
     }
@@ -1871,6 +1876,10 @@ public class OrderService {
 
     private String orderTimeoutEventKey(Order order) {
         return "order-timeout:" + order.getId() + ":session:" + order.getSessionId() + ":ticket-type:" + order.getTicketTypeId();
+    }
+
+    private String orderCancelEventKey(Order order) {
+        return "order-cancel:" + order.getId() + ":session:" + order.getSessionId() + ":ticket-type:" + order.getTicketTypeId();
     }
 
     private String orderSeatTimeoutEventKey(OrderSeat orderSeat) {

@@ -5,6 +5,7 @@ import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.notification.dto.ChannelStatusResponse;
 import com.omni.notification.dto.DirectChannelSendResult;
 import com.omni.notification.dto.InternalNotificationRequest;
+import com.omni.notification.dto.NotificationDeliveryStatusResponse;
 import com.omni.notification.dto.NotificationSummaryResponse;
 import com.omni.notification.entity.Notification;
 import com.omni.notification.service.NotificationChannelService;
@@ -133,6 +134,25 @@ public class NotificationController {
         response.setDirectChannelEnabled(directChannelEnabled);
         response.setDeliveryRetryMaxAttempts(deliveryRetryMaxAttempts);
         return Result.success(response);
+    }
+
+    @GetMapping("/internal/deliveries/status")
+    public Result<NotificationDeliveryStatusResponse> getDeliveryStatus(
+            @RequestParam String eventId,
+            @RequestParam String channel,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!StringUtils.hasText(internalApiToken) || !internalApiToken.equals(token)) {
+            return Result.fail(403, "无权限");
+        }
+        String normalizedEventId = eventId.trim();
+        String normalizedChannel = channel.trim().toUpperCase();
+        if (!StringUtils.hasText(normalizedEventId)
+                || normalizedEventId.length() > 120
+                || !(NotificationEventService.CHANNEL_SMS.equals(normalizedChannel)
+                || NotificationEventService.CHANNEL_EMAIL.equals(normalizedChannel))) {
+            return Result.fail(400, "投递查询参数不正确");
+        }
+        return Result.success(notificationEventService.getDeliveryStatus(normalizedEventId, normalizedChannel));
     }
 
     private Result<Notification> toDirectSendResponse(DirectChannelSendResult result, String channelName) {

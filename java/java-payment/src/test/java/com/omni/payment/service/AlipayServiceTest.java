@@ -23,6 +23,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -291,6 +292,21 @@ class AlipayServiceTest {
         assertEquals(false, result.getPaid());
         assertEquals(false, result.getSafeToCancel());
         assertEquals("支付结果确认中", result.getMessage());
+    }
+
+    @Test
+    void syncDecisionAllowsPendingOrderCancellationWhenLocalMockIsEnabled() throws Exception {
+        OrderInfoResponse order = order(35L, "DM1014", new BigDecimal("180.00"), 1);
+        when(orderClient.getOrder(35L, "internal-token")).thenReturn(Result.success(order));
+        when(paymentMapper.selectOne(any())).thenReturn(null);
+        when(alipayClient.execute(any(com.alipay.api.request.AlipayTradeQueryRequest.class)))
+                .thenThrow(new RuntimeException(new AlipayApiException("mock unavailable")));
+        ReflectionTestUtils.setField(service, "mockPaymentEnabled", true);
+
+        var result = service.syncDecisionForCancel(35L);
+
+        assertEquals(false, result.getPaid());
+        assertEquals(true, result.getSafeToCancel());
     }
 
     @Test

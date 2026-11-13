@@ -32,6 +32,7 @@
         <spring-boot.version>2.7.18</spring-boot.version>
         <spring-cloud.version>2021.0.8</spring-cloud.version>
         <spring-cloud-alibaba.version>2021.0.5.0</spring-cloud-alibaba.version>
+        <sentinel.version>1.8.6</sentinel.version>
         <seata.version>1.6.1</seata.version>
         <mybatis-plus.version>3.5.3.1</mybatis-plus.version>
         <druid.version>1.2.18</druid.version>

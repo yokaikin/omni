@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>本机抢票并发压测报告 | Omni</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #20242b;
+      --muted: #68717d;
+      --line: #dfe3e8;
+      --paper: #ffffff;
+      --canvas: #f3f5f7;
+      --accent: #d91f5d;
+      --accent-soft: #fff0f4;
+      --green: #16734a;
+      --green-soft: #eaf6ef;
+      --amber: #93600a;
+      --amber-soft: #fff5df;
+      --red: #a52a36;
+      --red-soft: #fff0f0;
+      --radius: 6px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font: 15px/1.65 "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    }
+    a { color: #a31646; text-underline-offset: 3px; }
+    .topbar {
+      min-height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 max(24px, calc((100vw - 1080px) / 2));
+      color: #fff;
+      background: #282d35;
+      border-bottom: 3px solid var(--accent);
+    }
+    .brand { font-weight: 700; letter-spacing: 0; }
+    .topbar small { color: #d1d5dc; }
+    main { width: min(1080px, calc(100% - 32px)); margin: 34px auto 64px; }
+    .heading { padding: 0 0 22px; border-bottom: 1px solid var(--line); }
+    .eyebrow { margin: 0 0 5px; color: var(--accent); font-size: 12px; font-weight: 700; }
+    h1 { margin: 0; font-size: 30px; line-height: 1.3; }
+    .subtitle { margin: 9px 0 0; color: var(--muted); }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 20px 0 24px;
+    }
+    .metric { min-width: 0; padding: 15px 16px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+    .metric span { display: block; color: var(--muted); font-size: 13px; }
+    .metric strong { display: block; margin-top: 4px; font-size: 26px; line-height: 1.25; font-variant-numeric: tabular-nums; }
+    .metric.primary strong { color: var(--accent); }
+    section { margin-top: 25px; }
+    h2 { margin: 0 0 12px; padding-left: 10px; border-left: 3px solid var(--accent); font-size: 19px; line-height: 1.35; }
+    h3 { margin: 0 0 7px; font-size: 16px; }
+    p { margin: 7px 0; }
+    .panel { padding: 17px 19px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+    .grid-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .grid-three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .tag { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 12px; font-weight: 700; }
+    .tag.ok { color: var(--green); background: var(--green-soft); }
+    .tag.warn { color: var(--amber); background: var(--amber-soft); }
+    .tag.fixed { color: #8e2147; background: var(--accent-soft); }
+    .tag.fail { color: var(--red); background: var(--red-soft); }
+    table { width: 100%; border-collapse: collapse; background: var(--paper); border: 1px solid var(--line); }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+    th { color: #47505b; background: #f7f8fa; font-size: 13px; font-weight: 700; }
+    tr:last-child td { border-bottom: 0; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .callout { padding: 13px 15px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: #503c17; }
+    .callout.success { border-color: var(--green); background: var(--green-soft); color: #194b34; }
+    .callout.issue { border-color: var(--red); background: var(--red-soft); color: #61242c; }
+    code { padding: 1px 5px; border-radius: 3px; background: #f0f2f4; color: #303742; font: 0.92em Consolas, "Cascadia Code", monospace; overflow-wrap: anywhere; }
+    ol, ul { margin: 7px 0; padding-left: 22px; }
+    li + li { margin-top: 4px; }
+    .small { color: var(--muted); font-size: 13px; }
+    footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    @media (max-width: 720px) {
+      .topbar { padding: 0 16px; }
+      .topbar small { text-align: right; }
+      main { width: min(100% - 24px, 1080px); margin-top: 22px; }
+      h1 { font-size: 25px; }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .metric { padding: 12px; }
+      .metric strong { font-size: 23px; }
+      .grid-two, .grid-three { grid-template-columns: 1fr; }
+      .table-wrap { overflow-x: auto; }
+      table { min-width: 440px; }
+    }
+    @media print {
+      body { background: #fff; font-size: 12px; }
+      main { width: 100%; margin: 16px auto; }
+      .topbar { color: var(--ink); background: #fff; border-bottom: 2px solid var(--accent); padding: 0 0 8px; }
+      .topbar small { color: var(--muted); }
+      .metric, .panel, table { break-inside: avoid; }
+      section { break-inside: avoid; }
+      a { color: inherit; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">OMNI · 本机验收</div>
+    <small>抢票业务并发压测 · 2026-11-13</small>
+  </div>
+  <main>
+    <header class="heading">
+      <p class="eyebrow">真实 HTTP 业务链路</p>
+      <h1>本机抢票并发压测报告</h1>
+      <p class="subtitle">验证 100 个不同用户并发提交抢票请求时，订单创建、库存竞争、售罄/限购响应、请求延迟和压测后清理结果。</p>
+    </header>
+
+    <div class="summary" aria-label="压测关键指标">
+      <div class="metric primary"><span>并发用户</span><strong>100</strong></div>
+      <div class="metric"><span>成功创建订单</span><strong>82</strong></div>
+      <div class="metric"><span>提交失败 / 超时</span><strong>0 / 0</strong></div>
+      <div class="metric"><span>提交延迟 p95</span><strong>802.6 ms</strong></div>
+    </div>
+
+    <section>
+      <h2>压测概况</h2>
+      <div class="grid-two">
+        <div class="panel">
+          <h3>环境与数据</h3>
+          <ul>
+            <li>运行环境：本机开发环境，Docker Compose 微服务栈</li>
+            <li>入口：<code>http://localhost:8088</code> Gateway</li>
+            <li>场次 / 票档：<code>910062</code> / <code>920186</code></li>
+            <li>压测前 PostgreSQL 余票：84 张</li>
+            <li>用户：100 个不同的本地演示用户</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>请求流程</h3>
+          <ol>
+            <li>并发准备用户身份并创建观演人。</li>
+            <li>并发调用 <code>POST /api/grab/requests</code>，每人请求 1 张。</li>
+            <li>轮询抢票进度直到订单创建、售罄、限购、失败或超时。</li>
+            <li>通过正常取消订单接口回收待支付订单，并删除本轮观演人。</li>
+          </ol>
+          <p class="small">执行脚本：<code>scripts/load-test-grab.mjs</code>。脚本仅允许本机 HTTP Gateway，且要求显式设置确认变量。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>正式 100 并发结果</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>最终状态</th><th class="num">数量</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td><code>ORDER_CREATED</code></td><td class="num">82</td><td>成功创建待支付订单</td></tr>
+            <tr><td><code>SOLD_OUT</code></td><td class="num">16</td><td>库存耗尽后拒绝请求</td></tr>
+            <tr><td><code>LIMITED</code></td><td class="num">2</td><td>触发限购规则</td></tr>
+            <tr><td>提交失败</td><td class="num">0</td><td>没有 HTTP 提交失败</td></tr>
+            <tr><td>轮询超时</td><td class="num">0</td><td>所有请求均获得终态</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="grid-three" style="margin-top:12px">
+        <div class="panel"><span class="small">提交延迟 p50</span><br><strong>526.1 ms</strong></div>
+        <div class="panel"><span class="small">提交延迟 p95</span><br><strong>802.6 ms</strong></div>
+        <div class="panel"><span class="small">最大提交延迟 / 总耗时</span><br><strong>816.3 ms / 55.9 s</strong></div>
+      </div>
+      <p class="small">延迟是提交抢票请求的接口耗时统计；约 55.9 秒为从准备测试数据到轮询结束的脚本总耗时。两者不是服务器纯处理时间或吞吐量指标。</p>
+    </section>
+
+    <section>
+      <h2>前置试跑与异常</h2>
+      <div class="panel">
+        <p><span class="tag warn">前置试跑未通过清理</span> 最初的 2 用户真实 HTTP 冒烟中，两个抢票请求都成功创建订单；清理时订单服务通过支付宝占位配置同步支付状态失败，正常取消接口拒绝释放这两笔待支付订单，余票从 84 降至 82。</p>
+        <p>之后为本机开发环境启用受控的支付 mock 清理路径，先确认环境和库存恢复，再进行正式 100 并发压测。正式压测中的 82 笔订单均通过正常取消接口回收，100 个观演人也全部删除。</p>
+        <p class="small">该前置问题属于测试环境清理路径，不计入正式 100 并发的提交失败数。</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>压测发现并修复的问题</h2>
+      <div class="grid-two">
+        <article class="panel">
+          <h3><span class="tag fixed">已修复</span> 取消订单后抢票 Redis 锁未即时释放</h3>
+          <p>压测清理后 PostgreSQL 库存已恢复，但抢票 Redis 中仍残留本轮 82 个用户锁，可见库存为 0；后续查询库存才触发与票务库同步。</p>
+          <p>修复后，订单取消成功会在事务提交后发布 <code>ORDER_CANCEL</code> 事件。抢票服务按订单、场次、票档匹配抢票请求，释放用户 admission/hold，恢复 Redis 库存并同步票务库存。</p>
+        </article>
+        <article class="panel">
+          <h3><span class="tag fixed">已修复</span> 订单服务健康检查返回 500</h3>
+          <p>压测期间业务请求仍成功，但 <code>/actuator/health</code> 返回 500，日志显示 Sentinel 缺少 <code>TransportConfig</code>。</p>
+          <p>重建并重启订单服务镜像后，确认包含 <code>sentinel-transport-common-1.8.6.jar</code>；当前 <code>127.0.0.1:8083/actuator/health</code> 返回 <code>{"status":"UP"}</code>。</p>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>清理与修复验证</h2>
+      <div class="grid-two">
+        <div class="callout success">
+          <strong>正式压测清理完成</strong>
+          <p>82 笔待支付订单正常取消；100 个观演人全部删除；PostgreSQL 余票恢复为 84；目标用户无待支付订单，抢票请求无活动中状态。</p>
+        </div>
+        <div class="panel">
+          <strong>修复后自动化验证</strong>
+          <ul>
+            <li>Java 订单服务定向测试：83 项通过</li>
+            <li>NestJS 抢票释放与候补消费者测试：10 项通过</li>
+            <li><code>grab-service</code> 构建通过</li>
+            <li>订单服务 Docker 镜像构建通过，健康检查为 UP</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>结论与适用范围</h2>
+      <div class="callout issue">
+        <strong>结论：</strong>本机开发环境下，100 个并发用户的真实 HTTP 抢票流程没有出现请求提交失败、轮询超时、服务崩溃或超卖；售罄和限购结果正常返回。压测发现的取消后 Redis 锁/库存同步问题及订单健康探针问题均已完成代码修复和自动化验证。
+      </div>
+      <div class="panel" style="margin-top:10px">
+        <p>本结果用于本机毕设验收，不能推导生产最大并发、峰值吞吐或公网部署容量。修复后已经通过单元测试、构建和运行态健康检查，但没有在共享开发库再次执行完整 100 并发；完整的修复后业务取消冒烟仍待隔离测试数据环境执行。</p>
+        <p>本次未执行真实支付宝支付、短信发送或公网业务测试；支付流程不属于这次抢票并发压测负载。</p>
+      </div>
+    </section>
+
+    <footer>
+      报告日期：2026-11-13 · 项目：Omni 本机开发环境 · 压测执行记录与修复记录见 <code>implementation-notes.md</code>
+    </footer>
+  </main>
+</body>
+</html>

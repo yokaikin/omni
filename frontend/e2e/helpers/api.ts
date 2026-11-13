@@ -30,6 +30,16 @@ export async function apiGet<T = unknown>(pathname: string, token?: string): Pro
   return (await res.json()) as ApiResult<T>
 }
 
+export async function apiGetInternal<T = unknown>(pathname: string): Promise<ApiResult<T>> {
+  const token = process.env.OMNI_E2E_INTERNAL_TOKEN
+  if (!token) throw new Error('缺少 OMNI_E2E_INTERNAL_TOKEN')
+  const res = await fetch(`${GATEWAY_URL}${pathname}`, {
+    method: 'GET',
+    headers: { 'X-Internal-Token': token },
+  })
+  return (await res.json()) as ApiResult<T>
+}
+
 export async function apiDelete<T = unknown>(pathname: string, token?: string): Promise<ApiResult<T>> {
   const headers: Record<string, string> = {}
   if (token) headers.Authorization = `Bearer ${token}`
@@ -90,6 +100,7 @@ export interface E2eState {
   grabRequestId?: string
   orderId?: number
   orderNo?: string
+  e2eOwnedOrderIds?: number[]
   paidOrderNo?: string
   entryCode?: string
   ticketCodes?: string[]
@@ -98,6 +109,7 @@ export interface E2eState {
   refundNo?: string
   checkInTicketNo?: string
   waitlistEntryId?: number
+  supplierAssetId?: number
 }
 
 export function readState(): E2eState {

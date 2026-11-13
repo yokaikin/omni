@@ -7,8 +7,10 @@ import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.notification.dto.InternalNotificationRequest;
+import com.omni.notification.dto.NotificationDeliveryStatusResponse;
 import com.omni.notification.entity.NotificationDelivery;
 import com.omni.notification.mapper.NotificationDeliveryMapper;
+import com.omni.notification.sms.SmsTemplateProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,19 +33,34 @@ public class NotificationEventService {
     private final NotificationDeliveryMapper deliveryMapper;
     private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
+    private final SmsTemplateProperties smsTemplateProperties;
 
     @Autowired
     public NotificationEventService(NotificationDeliveryMapper deliveryMapper,
-                                    NotificationService notificationService) {
-        this(deliveryMapper, notificationService, new ObjectMapper());
+                                    NotificationService notificationService,
+                                    SmsTemplateProperties smsTemplateProperties) {
+        this(deliveryMapper, notificationService, new ObjectMapper(), smsTemplateProperties);
+    }
+
+    NotificationEventService(NotificationDeliveryMapper deliveryMapper,
+                             NotificationService notificationService) {
+        this(deliveryMapper, notificationService, new ObjectMapper(), new SmsTemplateProperties());
     }
 
     NotificationEventService(NotificationDeliveryMapper deliveryMapper,
                              NotificationService notificationService,
                              ObjectMapper objectMapper) {
+        this(deliveryMapper, notificationService, objectMapper, new SmsTemplateProperties());
+    }
+
+    NotificationEventService(NotificationDeliveryMapper deliveryMapper,
+                             NotificationService notificationService,
+                             ObjectMapper objectMapper,
+                             SmsTemplateProperties smsTemplateProperties) {
         this.deliveryMapper = deliveryMapper;
         this.notificationService = notificationService;
         this.objectMapper = objectMapper;
+        this.smsTemplateProperties = smsTemplateProperties;
     }
 
     @Transactional
@@ -62,6 +79,25 @@ public class NotificationEventService {
                 deliveryMapper.insert(buildDelivery(message, channel, STATUS_PENDING, null));
             }
         }
+    }
+
+    public NotificationDeliveryStatusResponse getDeliveryStatus(String eventId, String channel) {
+        NotificationDelivery delivery = deliveryMapper.selectOne(new LambdaQueryWrapper<NotificationDelivery>()
+                .eq(NotificationDelivery::getEventId, eventId)
+                .eq(NotificationDelivery::getChannel, channel)
+                .last("LIMIT 1"));
+        if (delivery == null) {
+            return null;
+        }
+        NotificationDeliveryStatusResponse response = new NotificationDeliveryStatusResponse();
+        response.setEventId(delivery.getEventId());
+        response.setChannel(delivery.getChannel());
+        response.setStatus(delivery.getStatus());
+        response.setProviderMessageId(delivery.getProviderMessageId());
+        response.setFailureReason(delivery.getFailureReason());
+        response.setRetryCount(delivery.getRetryCount());
+        response.setSentTime(delivery.getSentTime());
+        return response;
     }
 
     private void validate(NotificationEventMessage message) {
@@ -107,13 +143,30 @@ public class NotificationEventService {
         delivery.setChannel(channel);
         delivery.setStatus(status);
         delivery.setRetryCount(0);
-        delivery.setTemplateCode(trimToNull(message.getTemplateCode()));
+        delivery.setTemplateCode(resolveTemplateCode(message, channel));
         delivery.setContentSnapshot(message.getContent().trim());
         delivery.setPayloadJson(toPayloadJson(message.getPayload()));
         delivery.setCreatedTime(now);
         delivery.setUpdatedTime(now);
         delivery.setSentTime(sentTime);
         return delivery;
+    }
+
+    private String resolveTemplateCode(NotificationEventMessage message, String channel) {
+        String explicitTemplateCode = trimToNull(message.getTemplateCode());
+        if (explicitTemplateCode != null) {
+            return explicitTemplateCode;
+        }
+        if (CHANNEL_SMS.equals(channel)) {
+            String eventType = message.getEventType().trim();
+            return smsTemplateProperties.getTemplateCodes().entrySet().stream()
+                    .filter(entry -> eventType.equalsIgnoreCase(entry.getKey()))
+                    .map(Map.Entry::getValue)
+                    .findFirst()
+                    .map(this::trimToNull)
+                    .orElse(null);
+        }
+        return null;
     }
 
     private String toPayloadJson(Map<String, Object> payload) {

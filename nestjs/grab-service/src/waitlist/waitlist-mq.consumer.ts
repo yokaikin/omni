@@ -4,6 +4,7 @@ import { ConfirmChannel } from 'amqplib';
 import { requireEnv, requireIntegerEnv } from '../runtime-env';
 import { WaitlistAllocatorService } from './waitlist-allocator.service';
 import { TicketReleasedEventDto } from './waitlist.types';
+import { GrabOrderReleaseService } from '../grab/grab-order-release.service';
 
 const WAITLIST_EXCHANGE = 'omni.waitlist';
 const WAITLIST_RETRY_EXCHANGE = 'omni.waitlist.retry';
@@ -31,7 +32,10 @@ export class WaitlistMqConsumer implements OnModuleInit, OnModuleDestroy {
   private connection: amqp.AmqpConnectionManager;
   private channelWrapper: amqp.ChannelWrapper;
 
-  constructor(private readonly allocator: WaitlistAllocatorService) {}
+  constructor(
+    private readonly allocator: WaitlistAllocatorService,
+    private readonly grabOrderReleaseService?: GrabOrderReleaseService,
+  ) {}
 
   async onModuleInit() {
     const host = requireEnv('RABBITMQ_HOST', 'RabbitMQ 地址未配置');
@@ -64,6 +68,7 @@ export class WaitlistMqConsumer implements OnModuleInit, OnModuleDestroy {
       const event: TicketReleasedEventDto = JSON.parse(msg.content.toString());
       this.assertReleasedPayload(event);
       this.logger.log(`收到候补释放消息: eventKey=${event.eventKey}`);
+      await this.grabOrderReleaseService?.releaseForOrder(event);
       await this.allocator.allocate(event);
       channel.ack(msg);
     } catch (err) {
@@ -171,7 +176,7 @@ export class WaitlistMqConsumer implements OnModuleInit, OnModuleDestroy {
       !event ||
       typeof event !== 'object' ||
       !event.eventKey ||
-      !event.source ||
+      !['ORDER_TIMEOUT', 'ORDER_CANCEL', 'REFUND', 'MANUAL'].includes(event.source) ||
       !this.isPositiveNumber(event.sessionId) ||
       !this.isPositiveNumber(event.ticketTypeId) ||
       !this.isPositiveNumber(event.quantity)

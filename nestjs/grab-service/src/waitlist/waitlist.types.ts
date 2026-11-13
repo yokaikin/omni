@@ -66,7 +66,7 @@ export interface WaitlistEntryResponse {
 
 export interface TicketReleasedEventDto {
   eventKey: string;
-  source: 'ORDER_TIMEOUT' | 'REFUND' | 'MANUAL';
+  source: 'ORDER_TIMEOUT' | 'ORDER_CANCEL' | 'REFUND' | 'MANUAL';
   sourceOrderId?: number | null;
   sessionId: number;
   ticketTypeId: number;

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { ACCOUNTS, isAlipayAutomationReady } from './helpers/env'
+import { ACCOUNTS, isAlipayAutomationReady, isHttpsStagingTargetReady } from './helpers/env'
 import { apiGet, buildStorageState, loginViaApi, updateState, type ApiResult } from './helpers/api'
 import { payOrderViaUi } from './helpers/alipay'
 import { cancelPendingOrders, purchaseTicketViaUi, snapshotOrderIds, type OrderRecord } from './helpers/purchase'
@@ -29,14 +29,15 @@ async function waitForRefund(token: string, orderId: number, timeoutMs: number):
 
 test('退款闭环：C端申请退款 → B端审核同意 → 沙箱退款到账', async ({ browser }) => {
   test.skip(!isAlipayAutomationReady(), '缺少沙箱买家凭据（OMNI_E2E_ALIPAY_BUYER_LOGON/PASSWORD/PAY_PASSWORD），跳过退款闭环')
+  test.skip(!isHttpsStagingTargetReady(), '未配置 HTTPS staging，跳过真实退款')
   test.setTimeout(420_000)
 
   // ===== setup：自备已支付订单（购票 + 沙箱支付） =====
-  const login = await loginViaApi(ACCOUNTS.user.phone, ACCOUNTS.user.password)
+  const login = await loginViaApi(ACCOUNTS.user2.phone, ACCOUNTS.user2.password)
   const context = await browser.newContext({ storageState: buildStorageState(login) })
   const page = await context.newPage()
 
-  await cancelPendingOrders(login.token)
+  await cancelPendingOrders(login.token, ACCOUNTS.user2.userId)
   const beforeIds = await snapshotOrderIds(login.token)
   const order = await purchaseTicketViaUi(page, login.token, beforeIds)
   const paidOrder = await payOrderViaUi(page, login.token, order)
